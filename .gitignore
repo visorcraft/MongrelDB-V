@@ -1,0 +1,20 @@
+# V build output
+*.exe
+*.o
+*.so
+*.dylib
+
+# Logs (e.g. mongreldb-server output captured by tests)
+*.log
+
+# Local server binary used for live tests
+bin/
+
+# macOS
+.DS_Store
+
+# Workspace-local agent instruction files are never published.
+AGENTS.md
+CLAUDE.md
+.cursorrules
+.zcode/
