@@ -451,11 +451,14 @@ pub fn (mut t Transaction) rollback() !Transaction {
 
 // ── SQL ───────────────────────────────────────────────────────────────────
 
-// sql executes a SQL statement via the `/sql` endpoint, requesting JSON
+// exec_sql executes a SQL statement via the `/sql` endpoint, requesting JSON
 // output. The server returns a JSON array of row objects keyed by column
 // name. For statements that yield no rows (DDL/DML), an empty list is
 // returned.
-pub fn (db Client) sql(sql_text string) ![]json2.Any {
+//
+// (Named `exec_sql` rather than `sql` because `sql` became a reserved keyword
+// in newer V releases and can no longer be used as a method name.)
+pub fn (db Client) exec_sql(sql_text string) ![]json2.Any {
 	mut entries := map[string]json2.Any{}
 	entries['sql'] = json2.Any(sql_text)
 	entries['format'] = json2.Any('json')

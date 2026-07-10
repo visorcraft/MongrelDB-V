@@ -205,12 +205,12 @@ fn test_sql() ? {
 	assert db.count(name) ? == 0
 
 	// INSERT via SQL must increase the row count.
-	db.sql('INSERT INTO ${name} (id, amount) VALUES (10, 42)') ?
+	db.exec_sql('INSERT INTO ${name} (id, amount) VALUES (10, 42)') ?
 	assert db.count(name) ? == 1
 
 	// JSON SQL mode returns the inserted row when the server honors it; an
-	// old server answers with Arrow IPC and sql() returns [].
-	rows := db.sql('SELECT id, amount FROM ${name}') ?
+	// old server answers with Arrow IPC and exec_sql() returns [].
+	rows := db.exec_sql('SELECT id, amount FROM ${name}') ?
 	if rows.len > 0 {
 		assert rows.len == 1
 	}

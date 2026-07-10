@@ -76,30 +76,30 @@ are managed with SQL. Run these statements through `db.sql`.
 ### Create a user
 
 ```v
-db.sql("CREATE USER alice WITH PASSWORD 'hunter2'") or { panic(err) }
+db.exec_sql("CREATE USER alice WITH PASSWORD 'hunter2'") or { panic(err) }
 ```
 
 ### Alter a user
 
 ```v
-db.sql("ALTER USER alice WITH PASSWORD 'new-password'") or { panic(err) }
-db.sql('ALTER USER alice ADMIN') or { panic(err) }
+db.exec_sql("ALTER USER alice WITH PASSWORD 'new-password'") or { panic(err) }
+db.exec_sql('ALTER USER alice ADMIN') or { panic(err) }
 ```
 
 ### Drop a user
 
 ```v
-db.sql('DROP USER alice') or { panic(err) }
+db.exec_sql('DROP USER alice') or { panic(err) }
 ```
 
 ### Roles and grants
 
 ```v
-db.sql('CREATE ROLE analyst') or { panic(err) }
-db.sql('GRANT SELECT ON orders TO analyst') or { panic(err) }
-db.sql('GRANT analyst TO alice') or { panic(err) }
-db.sql('REVOKE SELECT ON orders FROM analyst') or { panic(err) }
-db.sql('DROP ROLE analyst') or { panic(err) }
+db.exec_sql('CREATE ROLE analyst') or { panic(err) }
+db.exec_sql('GRANT SELECT ON orders TO analyst') or { panic(err) }
+db.exec_sql('GRANT analyst TO alice') or { panic(err) }
+db.exec_sql('REVOKE SELECT ON orders FROM analyst') or { panic(err) }
+db.exec_sql('DROP ROLE analyst') or { panic(err) }
 ```
 
 ## Common pitfalls

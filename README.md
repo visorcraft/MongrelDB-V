@@ -146,14 +146,14 @@ _ = q2.execute() or { panic(err) }
 ## SQL
 
 ```v
-db.sql("INSERT INTO orders (id, customer, amount) VALUES (99, 'Zoe', 999.0)") or { panic(err) }
-db.sql('CREATE TABLE archive AS SELECT * FROM orders WHERE amount > 500') or { panic(err) }
+db.exec_sql("INSERT INTO orders (id, customer, amount) VALUES (99, 'Zoe', 999.0)") or { panic(err) }
+db.exec_sql('CREATE TABLE archive AS SELECT * FROM orders WHERE amount > 500') or { panic(err) }
 
 // Recursive CTEs and window functions
 cte := 'WITH RECURSIVE r(n) AS (
   SELECT 1 UNION ALL SELECT n+1 FROM r WHERE n<10
 ) SELECT n FROM r'
-db.sql(cte) or { panic(err) }
+db.exec_sql(cte) or { panic(err) }
 ```
 
 The `/sql` endpoint is requested in JSON format. For statements that yield no
@@ -202,7 +202,7 @@ res := db.schema_for('missing_table') or {
 | `delete_by_pk(table, pk) !` | Delete by primary key |
 | `query(table) QueryBuilder` | Start a native query |
 | `begin() Transaction` | Start a batch |
-| `sql(sql) ![]Any` | Execute SQL |
+| `exec_sql(sql) ![]Any` | Execute SQL |
 | `schema() !map[string]Any` | Full schema catalog |
 | `schema_for(table) !Any` | Single-table descriptor |
 

@@ -4,7 +4,7 @@ MongrelDB ships a DataFusion-backed SQL engine at `POST /sql`. From V, run SQL
 with `db.sql`:
 
 ```v
-rows := db.sql('SELECT 1') or { panic(err) }
+rows := db.exec_sql('SELECT 1') or { panic(err) }
 ```
 
 This guide covers the SQL surface - DDL, DML, `CREATE TABLE AS SELECT`,
@@ -15,7 +15,7 @@ native query builder.
 
 ## How `sql` behaves
 
-`db.sql(sql)` sends `{"sql": "...", "format": "json"}` to `/sql`. It returns
+`db.exec_sql(sql)` sends `{"sql": "...", "format": "json"}` to `/sql`. It returns
 the decoded rows when the daemon replies with a JSON result set, and an empty
 array with no error otherwise.
 
@@ -31,7 +31,7 @@ or 5xx maps to `MongrelError.query(...)`/`.http_error(...)`; 409 maps to
 `.conflict`; and so on. See [errors.md](errors.md).
 
 ```v
-db.sql("INSERT INTO orders (id, customer, amount) VALUES (99, 'Zoe', 999.0)") or {
+db.exec_sql("INSERT INTO orders (id, customer, amount) VALUES (99, 'Zoe', 999.0)") or {
 	match err {
 		mongreldb.MongrelError{...conflict} { println('duplicate row') }
 		else { panic(err) }
@@ -42,7 +42,7 @@ db.sql("INSERT INTO orders (id, customer, amount) VALUES (99, 'Zoe', 999.0)") or
 ## CREATE TABLE
 
 ```v
-db.sql('CREATE TABLE products (
+db.exec_sql('CREATE TABLE products (
   id          INT64 PRIMARY KEY,
   name        VARCHAR,
   price       FLOAT64,
@@ -54,8 +54,8 @@ db.sql('CREATE TABLE products (
 ## INSERT
 
 ```v
-db.sql("INSERT INTO products (id, name, price, category, in_stock) VALUES (1, 'Widget', 9.99, 'tools', true)") or { panic(err) }
-db.sql('INSERT INTO products VALUES (2, "Gadget", 19.99, "tools", true)') or { panic(err) }
+db.exec_sql("INSERT INTO products (id, name, price, category, in_stock) VALUES (1, 'Widget', 9.99, 'tools', true)") or { panic(err) }
+db.exec_sql('INSERT INTO products VALUES (2, "Gadget", 19.99, "tools", true)') or { panic(err) }
 ```
 
 For bulk inserts, the native batch transaction (`db.begin`) is usually faster
@@ -64,22 +64,22 @@ because it stages ops in one round trip without re-parsing SQL.
 ## UPDATE
 
 ```v
-db.sql('UPDATE products SET price = 14.99 WHERE id = 1') or { panic(err) }
-db.sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'") or { panic(err) }
+db.exec_sql('UPDATE products SET price = 14.99 WHERE id = 1') or { panic(err) }
+db.exec_sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'") or { panic(err) }
 ```
 
 ## DELETE
 
 ```v
-db.sql('DELETE FROM products WHERE in_stock = false') or { panic(err) }
-db.sql('DELETE FROM products WHERE id = 2') or { panic(err) }
+db.exec_sql('DELETE FROM products WHERE in_stock = false') or { panic(err) }
+db.exec_sql('DELETE FROM products WHERE id = 2') or { panic(err) }
 ```
 
 ## SELECT
 
 ```v
-db.sql("SELECT id, name FROM products WHERE category = 'tools' ORDER BY price") or { panic(err) }
-db.sql('SELECT category, COUNT(*) AS n FROM products GROUP BY category') or { panic(err) }
+db.exec_sql("SELECT id, name FROM products WHERE category = 'tools' ORDER BY price") or { panic(err) }
+db.exec_sql('SELECT category, COUNT(*) AS n FROM products GROUP BY category') or { panic(err) }
 ```
 
 ## CREATE TABLE AS SELECT
@@ -88,9 +88,9 @@ Materialize a query result into a new table. Great for snapshots, rollups,
 and denormalized aggregates.
 
 ```v
-db.sql('CREATE TABLE archive AS SELECT * FROM orders WHERE amount > 500') or { panic(err) }
+db.exec_sql('CREATE TABLE archive AS SELECT * FROM orders WHERE amount > 500') or { panic(err) }
 
-db.sql('CREATE TABLE sales_by_customer AS
+db.exec_sql('CREATE TABLE sales_by_customer AS
    SELECT customer, SUM(amount) AS total
    FROM orders
    GROUP BY customer') or { panic(err) }
@@ -99,7 +99,7 @@ db.sql('CREATE TABLE sales_by_customer AS
 ## Recursive CTEs
 
 ```v
-db.sql('WITH RECURSIVE r(n) AS (
+db.exec_sql('WITH RECURSIVE r(n) AS (
    SELECT 1
    UNION ALL
    SELECT n + 1 FROM r WHERE n < 10
@@ -111,12 +111,12 @@ db.sql('WITH RECURSIVE r(n) AS (
 
 ```v
 // Row number within each customer, ordered by amount descending.
-db.sql('SELECT id, customer, amount,
+db.exec_sql('SELECT id, customer, amount,
        ROW_NUMBER() OVER (PARTITION BY customer ORDER BY amount DESC) AS rn
  FROM orders') or { panic(err) }
 
 // Running total per customer.
-db.sql('SELECT id, customer, amount,
+db.exec_sql('SELECT id, customer, amount,
        SUM(amount) OVER (PARTITION BY customer ORDER BY id) AS running_total
  FROM orders') or { panic(err) }
 ```
