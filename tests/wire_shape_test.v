@@ -79,6 +79,33 @@ fn test_column_to_json_omits_empty_enum() {
 	assert s.contains('"default_value":"x"')
 }
 
+fn test_column_to_json_emits_boolean_default() {
+	col := mongreldb.Column{
+		id:                 4
+		name:               'enabled'
+		ty:                 'bool'
+		has_default_scalar: true
+		default_scalar:     json2.Any(true)
+	}
+	s := mongreldb.column_to_json_string(col)
+	assert s.contains('"default_value":true')
+}
+
+fn test_column_to_json_emits_dynamic_default_expr() {
+	col := mongreldb.Column{
+		id:                 5
+		name:               'created_at'
+		ty:                 'timestamp'
+		default_value:      'legacy'
+		has_default_scalar: true
+		default_scalar:     json2.Any(false)
+		default_expr:       'now'
+	}
+	s := mongreldb.column_to_json_string(col)
+	assert s.contains('"default_expr":"now"')
+	assert !s.contains('default_value')
+}
+
 fn test_url_path_escape_passes_unreserved() {
 	// Unreserved characters pass through unchanged.
 	assert mongreldb.url_path_escape('orders_2026.1') == 'orders_2026.1'

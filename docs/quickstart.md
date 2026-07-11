@@ -153,7 +153,9 @@ schemas that don't set them produce an identical payload.
 | Field | Type | Effect |
 |-------|------|--------|
 | `enum_variants` | `[]string` | Restrict the column to one of the listed string values. The engine rejects writes outside the set with `MongrelError.conflict`. |
-| `default_value` | `string` | Default value applied when the cell is omitted on a `put`. Sent as a raw string and coerced server-side per the column's `ty`. |
+| `default_value` | `string` | String default applied when the cell is omitted on a `put`. |
+| `has_default_scalar` + `default_scalar` | `bool` + `json2.Any` | Non-string JSON scalar default. Caller must supply the scalar type expected by the column. Sent as `default_value`. |
+| `default_expr` | `string` | Dynamic `now` or `uuid`. Takes precedence over scalar and string defaults. |
 
 Both fields compose. A column can be a plain string, an enum-only string, a
 string with a default, or an enum with a default:

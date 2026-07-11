@@ -109,6 +109,10 @@ pub mut:
 	nullable      bool
 	enum_variants []string @[serde: skip_if_empty]
 	default_value string   @[serde: skip_if_empty]
+	// Set has_default_scalar to send a non-string JSON scalar as default_value.
+	has_default_scalar bool
+	default_scalar     json2.Any
+	default_expr       string @[serde: skip_if_empty]
 }
 
 // Cell pairs a column id with its value. The client flattens a list of cells
@@ -638,7 +642,11 @@ pub fn column_to_any(c Column) json2.Any {
 		}
 		entries['enum_variants'] = json2.Any(arr)
 	}
-	if c.default_value != '' {
+	if c.default_expr != '' {
+		entries['default_expr'] = json2.Any(c.default_expr)
+	} else if c.has_default_scalar {
+		entries['default_value'] = c.default_scalar
+	} else if c.default_value != '' {
 		entries['default_value'] = json2.Any(c.default_value)
 	}
 	return json2.Any(entries)
