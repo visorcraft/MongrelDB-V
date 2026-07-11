@@ -14,7 +14,6 @@ module mongreldb_test
 
 import os
 import rand
-
 import mongreldb
 
 const default_url = 'http://127.0.0.1:8453'
@@ -46,9 +45,9 @@ fn unique_table(prefix string) string {
 // int_col builds a simple int64 column.
 fn int_col(id i64, name string, pk bool) mongreldb.Column {
 	return mongreldb.Column{
-		id: id
-		name: name
-		ty: 'int64'
+		id:          id
+		name:        name
+		ty:          'int64'
 		primary_key: pk
 	}
 }
@@ -56,18 +55,18 @@ fn int_col(id i64, name string, pk bool) mongreldb.Column {
 // float_col builds a simple float64 column.
 fn float_col(id i64, name string) mongreldb.Column {
 	return mongreldb.Column{
-		id: id
+		id:   id
 		name: name
-		ty: 'float64'
+		ty:   'float64'
 	}
 }
 
 // varchar_col builds a simple varchar column.
 fn varchar_col(id i64, name string) mongreldb.Column {
 	return mongreldb.Column{
-		id: id
+		id:   id
 		name: name
-		ty: 'varchar'
+		ty:   'varchar'
 	}
 }
 
@@ -85,169 +84,201 @@ fn must_put(db mongreldb.Client, table string, cells []mongreldb.Cell) {
 
 // ── Tests (14-operation conformance matrix) ───────────────────────────────
 
-fn test_health() ? {
+fn test_health() ! {
 	db := connect_or_skip() or { return }
-	assert true == db.health() or {}
+	ok := db.health() or {
+		assert false
+		return
+	}
+	assert ok
 }
 
-fn test_create_table_and_count() ? {
+fn test_create_table_and_count() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_tbl')
-	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')]) ?
-	assert db.count(name) ? == 0
+	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
+	n1 := db.count(name)!
+
+	assert n1 == 0
 }
 
-fn test_put_and_count_round_trip() ? {
+fn test_put_and_count_round_trip() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_put')
-	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')]) ?
+	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 	db.put(name, [
 		mongreldb.Cell{1, mongreldb.int_value(1)},
 		mongreldb.Cell{2, mongreldb.float_value(99.5)},
-	], '') ?
+	], '')!
 	db.put(name, [
 		mongreldb.Cell{1, mongreldb.int_value(2)},
 		mongreldb.Cell{2, mongreldb.float_value(150.0)},
-	], '') ?
-	assert db.count(name) ? == 2
+	], '')!
+	n2 := db.count(name)!
+
+	assert n2 == 2
 }
 
-fn test_upsert_inserts_then_updates() ? {
+fn test_upsert_inserts_then_updates() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_upsert')
-	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')]) ?
+	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 
 	// First upsert inserts.
 	db.upsert(name, [
 		mongreldb.Cell{1, mongreldb.int_value(1)},
 		mongreldb.Cell{2, mongreldb.float_value(99.5)},
-	], [mongreldb.Cell{2, mongreldb.float_value(99.5)}], '') ?
-	assert db.count(name) ? == 1
+	], [mongreldb.Cell{2, mongreldb.float_value(99.5)}], '')!
+	n3 := db.count(name)!
+
+	assert n3 == 1
 
 	// Second upsert on the same PK updates (still one row).
 	db.upsert(name, [
 		mongreldb.Cell{1, mongreldb.int_value(1)},
 		mongreldb.Cell{2, mongreldb.float_value(120.0)},
-	], [mongreldb.Cell{2, mongreldb.float_value(120.0)}], '') ?
-	assert db.count(name) ? == 1
+	], [mongreldb.Cell{2, mongreldb.float_value(120.0)}], '')!
+	n4 := db.count(name)!
+
+	assert n4 == 1
 
 	// The updated value is returned by a query.
 	mut q := db.query(name)
-	q = q.where_('pk', {'value': mongreldb.int_value(1)})
-	rows := q.execute() ?
+	q = q.where_('pk', {
+		'value': mongreldb.int_value(1)
+	})
+	rows := q.execute()!
 	assert rows.len == 1
 }
 
-fn test_query_by_pk() ? {
+fn test_query_by_pk() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_pk')
-	fresh_table(db, name, [int_col(1, 'id', true)]) ?
+	fresh_table(db, name, [int_col(1, 'id', true)])!
 	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(42)}])
 	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(43)}])
 
 	mut q := db.query(name)
-	q = q.where_('pk', {'value': mongreldb.int_value(42)})
-	rows := q.execute() ?
+	q = q.where_('pk', {
+		'value': mongreldb.int_value(42)
+	})
+	rows := q.execute()!
 	assert rows.len == 1
 }
 
-fn test_query_range() ? {
+fn test_query_range() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_range')
-	fresh_table(db, name, [int_col(1, 'id', true), int_col(2, 'amount', false)]) ?
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(1)}, mongreldb.Cell{2, mongreldb.int_value(50)}])
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(2)}, mongreldb.Cell{2, mongreldb.int_value(120)}])
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(3)}, mongreldb.Cell{2, mongreldb.int_value(200)}])
+	fresh_table(db, name, [int_col(1, 'id', true), int_col(2, 'amount', false)])!
+	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(1)},
+		mongreldb.Cell{2, mongreldb.int_value(50)}])
+	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(2)},
+		mongreldb.Cell{2, mongreldb.int_value(120)}])
+	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(3)},
+		mongreldb.Cell{2, mongreldb.int_value(200)}])
 
 	mut q := db.query(name)
 	q = q.where_('range', {
 		'column': mongreldb.int_value(2)
-		'min': mongreldb.int_value(100)
-		'max': mongreldb.int_value(150)
+		'min':    mongreldb.int_value(100)
+		'max':    mongreldb.int_value(150)
 	})
-	rows := q.execute() ?
+	rows := q.execute()!
 	// Only the row with amount=120 (pk=2) falls in [100, 150].
 	assert rows.len == 1
 }
 
-fn test_transaction_put_commit() ? {
+fn test_transaction_put_commit() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_txn')
-	fresh_table(db, name, [int_col(1, 'id', true)]) ?
+	fresh_table(db, name, [int_col(1, 'id', true)])!
 
 	mut txn := db.begin()
-	txn = txn.txn_put(name, [mongreldb.Cell{1, mongreldb.int_value(1)}], false) ?
-	txn = txn.txn_put(name, [mongreldb.Cell{1, mongreldb.int_value(2)}], false) ?
-	txn = txn.txn_put(name, [mongreldb.Cell{1, mongreldb.int_value(3)}], false) ?
+	txn = txn.txn_put(name, [mongreldb.Cell{1, mongreldb.int_value(1)}], false)!
+	txn = txn.txn_put(name, [mongreldb.Cell{1, mongreldb.int_value(2)}], false)!
+	txn = txn.txn_put(name, [mongreldb.Cell{1, mongreldb.int_value(3)}], false)!
 	assert txn.txn_count() == 3
 
-	results, txn2 := txn.commit('') ?
+	results, txn2 := txn.commit('')!
 	assert results.len == 3
-	assert db.count(name) ? == 3
+	n5 := db.count(name)!
+
+	assert n5 == 3
 	_ = txn2
 }
 
-fn test_delete_by_pk() ? {
+fn test_delete_by_pk() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_del')
-	fresh_table(db, name, [int_col(1, 'id', true)]) ?
+	fresh_table(db, name, [int_col(1, 'id', true)])!
 	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(5)}])
-	assert db.count(name) ? == 1
+	n6 := db.count(name)!
 
-	db.delete_by_pk(name, mongreldb.int_value(5)) ?
-	assert db.count(name) ? == 0
+	assert n6 == 1
+
+	db.delete_by_pk(name, mongreldb.int_value(5))!
+	n7 := db.count(name)!
+
+	assert n7 == 0
 }
 
-fn test_sql() ? {
+fn test_sql() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_sql')
-	fresh_table(db, name, [int_col(1, 'id', true), int_col(2, 'amount', false)]) ?
-	assert db.count(name) ? == 0
+	fresh_table(db, name, [int_col(1, 'id', true), int_col(2, 'amount', false)])!
+	n8 := db.count(name)!
+
+	assert n8 == 0
 
 	// INSERT via SQL must increase the row count.
-	db.exec_sql('INSERT INTO ${name} (id, amount) VALUES (10, 42)') ?
-	assert db.count(name) ? == 1
+	db.exec_sql('INSERT INTO ${name} (id, amount) VALUES (10, 42)')!
+	n9 := db.count(name)!
+
+	assert n9 == 1
 
 	// JSON SQL mode returns the inserted row when the server honors it; an
 	// old server answers with Arrow IPC and exec_sql() returns [].
-	rows := db.exec_sql('SELECT id, amount FROM ${name}') ?
+	rows := db.exec_sql('SELECT id, amount FROM ${name}')!
 	if rows.len > 0 {
 		assert rows.len == 1
 	}
 }
 
-fn test_schema() ? {
+fn test_schema() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_schema')
-	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')]) ?
+	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 
-	catalog := db.schema() ?
+	catalog := db.schema()!
 	assert name in catalog
 }
 
-fn test_schema_for() ? {
+fn test_schema_for() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_schema_for')
-	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')]) ?
+	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 
-	desc := db.schema_for(name) ?
+	desc := db.schema_for(name)!
 	obj := desc.as_map()
 	assert 'schema_id' in obj
-	cols := obj['columns'] or { assert false return }
-	cols_arr := cols.array() or { assert false return }
+	cols := obj['columns'] or {
+		assert false
+		return
+	}
+	cols_arr := cols.as_array()
 	assert cols_arr.len == 2
 }
 
-fn test_table_names_lists_created_table() ? {
+fn test_table_names_lists_created_table() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_tables')
-	fresh_table(db, name, [int_col(1, 'id', true)]) ?
+	fresh_table(db, name, [int_col(1, 'id', true)])!
 
-	names := db.table_names() ?
+	names := db.table_names()!
 	assert name in names
 }
 
-fn test_error_on_nonexistent_table() ? {
+fn test_error_on_nonexistent_table() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_missing')
 	_ = db.schema_for(name) or {
@@ -259,7 +290,7 @@ fn test_error_on_nonexistent_table() ? {
 	assert false
 }
 
-fn test_error_type_carries_status() ? {
+fn test_error_type_carries_status() ! {
 	db := connect_or_skip() or { return }
 	name := unique_table('v_missing2')
 	// schema_for maps a 404 to not_found, the typed result of the status.

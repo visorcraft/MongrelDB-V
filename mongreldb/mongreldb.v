@@ -68,7 +68,10 @@ fn (e MongrelError) msg() string {
 
 // err constructs a `MongrelError` value with the given kind and detail.
 fn merr(kind MongrelErrorKind, message string) MongrelError {
-	return MongrelError{kind: kind, message: message}
+	return MongrelError{
+		kind:    kind
+		message: message
+	}
 }
 
 // Client is the MongrelDB HTTP client. Create one with `connect`.
@@ -99,13 +102,13 @@ pub:
 // only emitted when set.
 pub struct Column {
 pub mut:
-	id             i64
-	name           string
-	ty             string
-	primary_key    bool
-	nullable       bool
-	enum_variants  []string @[serde: skip_if_empty]
-	default_value  string    @[serde: skip_if_empty]
+	id            i64
+	name          string
+	ty            string
+	primary_key   bool
+	nullable      bool
+	enum_variants []string @[serde: skip_if_empty]
+	default_value string   @[serde: skip_if_empty]
 }
 
 // Cell pairs a column id with its value. The client flattens a list of cells
@@ -128,12 +131,12 @@ pub:
 // QueryBuilder accumulates a single table query.
 pub struct QueryBuilder {
 pub mut:
-	client      &Client
-	table       string
-	conditions  []QueryCondition
-	projection  []i64
-	has_proj    bool
-	limit_val   ?i64
+	client     &Client
+	table      string
+	conditions []QueryCondition
+	projection []i64
+	has_proj   bool
+	limit_val  ?i64
 }
 
 // Transaction buffers a sequence of operations and flushes them atomically in
@@ -156,7 +159,7 @@ pub fn connect(base_url string, options Options) Client {
 	}
 	return Client{
 		base_url: url
-		token: options.token
+		token:    options.token
 		username: options.username
 		password: options.password
 	}
@@ -166,16 +169,15 @@ pub fn connect(base_url string, options Options) Client {
 
 // health reports whether the daemon is reachable and healthy.
 pub fn (db Client) health() !bool {
-	_body := db.raw_request(.get, '/health', none) or { return err }
+	_ := db.raw_request(.get, '/health', none) or { return err }
 	return true
 }
 
 // table_names lists all table names in the database.
 pub fn (db Client) table_names() ![]string {
 	body := db.raw_request(.get, '/tables', none) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
-	arr := value.array() or { return merr(.json_error, 'expected an array of strings')}
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
+	arr := value.as_array()
 	mut out := []string{}
 	for item in arr {
 		s := item.str()
@@ -195,31 +197,27 @@ pub fn (db Client) create_table(name string, columns []Column) !i64 {
 	entries['name'] = json2.Any(name)
 	entries['columns'] = json2.Any(col_arr)
 	payload := json2.Any(entries)
-	body := db.post_json('/kit/create_table', payload) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
+	body := post_json(db, '/kit/create_table', payload) or { return err }
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 	obj := value.as_map()
-	tid_any := obj['table_id'] or { return merr(.json_error, 'missing table_id')}
-	tid := tid_any.int() or { return merr(.json_error, 'table_id not an integer')}
-	return tid
+	tid_any := obj['table_id'] or { return merr(.json_error, 'missing table_id') }
+	return tid_any.i64()
 }
 
 // drop_table drops a table by name.
 pub fn (db Client) drop_table(name string) ! {
 	path := '/tables/' + url_path_escape(name)
-	_body := db.raw_request(.delete, path, none) or { return err }
+	_ := db.raw_request(.delete, path, none) or { return err }
 }
 
 // count returns the row count for a table.
 pub fn (db Client) count(table string) !i64 {
 	path := '/tables/' + url_path_escape(table) + '/count'
 	body := db.raw_request(.get, path, none) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 	obj := value.as_map()
-	c_any := obj['count'] or { return merr(.json_error, 'missing count')}
-	c := c_any.int() or { return merr(.json_error, 'count not an integer')}
-	return c
+	c_any := obj['count'] or { return merr(.json_error, 'missing count') }
+	return c_any.i64()
 }
 
 // ── CRUD (via the Kit typed transaction endpoint) ─────────────────────────
@@ -234,7 +232,7 @@ pub fn (db Client) put(table string, cells []Cell, idempotency_key string) !json
 	inner_entries['returning'] = json2.Any(false)
 	inner := json2.Any(inner_entries)
 	op := json2.Any({
-		'put': inner,
+		'put': inner
 	})
 	ops := [op]
 	results := commit_txn(db, ops, idempotency_key) or { return err }
@@ -257,7 +255,7 @@ pub fn (db Client) upsert(table string, cells []Cell, update_cells []Cell, idemp
 	}
 	inner := json2.Any(entries)
 	op := json2.Any({
-		'upsert': inner,
+		'upsert': inner
 	})
 	ops := [op]
 	results := commit_txn(db, ops, idempotency_key) or { return err }
@@ -274,7 +272,7 @@ pub fn (db Client) delete(table string, row_id i64) ! {
 	inner_entries['row_id'] = json2.Any(row_id)
 	inner := json2.Any(inner_entries)
 	op := json2.Any({
-		'delete': inner,
+		'delete': inner
 	})
 	ops := [op]
 	_ = commit_txn(db, ops, '') or { return err }
@@ -287,7 +285,7 @@ pub fn (db Client) delete_by_pk(table string, pk json2.Any) ! {
 	inner_entries['pk'] = pk
 	inner := json2.Any(inner_entries)
 	op := json2.Any({
-		'delete_by_pk': inner,
+		'delete_by_pk': inner
 	})
 	ops := [op]
 	_ = commit_txn(db, ops, '') or { return err }
@@ -299,7 +297,7 @@ pub fn (db Client) delete_by_pk(table string, pk json2.Any) ! {
 pub fn (db Client) query(table string) QueryBuilder {
 	return QueryBuilder{
 		client: &db
-		table: table
+		table:  table
 	}
 }
 
@@ -309,7 +307,7 @@ pub fn (mut qb QueryBuilder) where_(cond_type string, params map[string]json2.An
 	normalized := normalize_condition(cond_type, params)
 	qb.conditions << QueryCondition{
 		condition_type: cond_type
-		params: normalized
+		params:         normalized
 	}
 	return qb
 }
@@ -348,17 +346,15 @@ pub fn (mut qb QueryBuilder) execute() ![]json2.Any {
 		}
 		entries['projection'] = json2.Any(proj)
 	}
-	if qb.limit_val != none {
-		entries['limit'] = json2.Any(qb.limit_val or { 0 })
+	if limit := qb.limit_val {
+		entries['limit'] = json2.Any(limit)
 	}
 	payload := json2.Any(entries)
 	body := post_json(qb.client, '/kit/query', payload) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 	obj := value.as_map()
-	rows_any := obj['rows'] or { return merr(.json_error, 'missing rows')}
-	rows := rows_any.array() or { return merr(.json_error, 'rows not an array')}
-	return rows
+	rows_any := obj['rows'] or { return merr(.json_error, 'missing rows') }
+	return rows_any.as_array()
 }
 
 // ── Transactions ──────────────────────────────────────────────────────────
@@ -373,7 +369,7 @@ pub fn (db Client) begin() Transaction {
 // txn_put stages an insert on the transaction.
 pub fn (mut t Transaction) txn_put(table string, cells []Cell, returning bool) !Transaction {
 	if t.committed {
-		return merr(.already_committed, "")
+		return merr(.already_committed, '')
 	}
 	mut inner_entries := map[string]json2.Any{}
 	inner_entries['table'] = json2.Any(table)
@@ -381,7 +377,7 @@ pub fn (mut t Transaction) txn_put(table string, cells []Cell, returning bool) !
 	inner_entries['returning'] = json2.Any(returning)
 	inner := json2.Any(inner_entries)
 	op := json2.Any({
-		'put': inner,
+		'put': inner
 	})
 	t.ops << op
 	return t
@@ -390,14 +386,14 @@ pub fn (mut t Transaction) txn_put(table string, cells []Cell, returning bool) !
 // txn_delete stages a delete by row id.
 pub fn (mut t Transaction) txn_delete(table string, row_id i64) !Transaction {
 	if t.committed {
-		return merr(.already_committed, "")
+		return merr(.already_committed, '')
 	}
 	mut inner_entries := map[string]json2.Any{}
 	inner_entries['table'] = json2.Any(table)
 	inner_entries['row_id'] = json2.Any(row_id)
 	inner := json2.Any(inner_entries)
 	op := json2.Any({
-		'delete': inner,
+		'delete': inner
 	})
 	t.ops << op
 	return t
@@ -406,14 +402,14 @@ pub fn (mut t Transaction) txn_delete(table string, row_id i64) !Transaction {
 // txn_delete_by_pk stages a delete by primary key.
 pub fn (mut t Transaction) txn_delete_by_pk(table string, pk json2.Any) !Transaction {
 	if t.committed {
-		return merr(.already_committed, "")
+		return merr(.already_committed, '')
 	}
 	mut inner_entries := map[string]json2.Any{}
 	inner_entries['table'] = json2.Any(table)
 	inner_entries['pk'] = pk
 	inner := json2.Any(inner_entries)
 	op := json2.Any({
-		'delete_by_pk': inner,
+		'delete_by_pk': inner
 	})
 	t.ops << op
 	return t
@@ -428,7 +424,7 @@ pub fn (t Transaction) txn_count() int {
 // returns the per-operation results array.
 pub fn (mut t Transaction) commit(idempotency_key string) !([]json2.Any, Transaction) {
 	if t.committed {
-		return merr(.already_committed, "")
+		return merr(.already_committed, '')
 	}
 	if t.ops.len == 0 {
 		t.committed = true
@@ -442,7 +438,7 @@ pub fn (mut t Transaction) commit(idempotency_key string) !([]json2.Any, Transac
 // rollback discards all locally staged operations.
 pub fn (mut t Transaction) rollback() !Transaction {
 	if t.committed {
-		return merr(.already_committed, "")
+		return merr(.already_committed, '')
 	}
 	t.committed = true
 	t.ops.clear()
@@ -463,7 +459,7 @@ pub fn (db Client) exec_sql(sql_text string) ![]json2.Any {
 	entries['sql'] = json2.Any(sql_text)
 	entries['format'] = json2.Any('json')
 	payload := json2.Any(entries)
-	body := db.post_json('/sql', payload) or { return err }
+	body := post_json(db, '/sql', payload) or { return err }
 	trimmed := body.trim_space()
 	if trimmed == '' {
 		return []json2.Any{}
@@ -474,10 +470,8 @@ pub fn (db Client) exec_sql(sql_text string) ![]json2.Any {
 	if !trimmed.starts_with('[') {
 		return []json2.Any{}
 	}
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
-	rows := value.array() or { return []json2.Any{}}
-	return rows
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
+	return value.as_array()
 }
 
 // ── Schema ────────────────────────────────────────────────────────────────
@@ -485,25 +479,17 @@ pub fn (db Client) exec_sql(sql_text string) ![]json2.Any {
 // schema returns the full schema catalog: a map of table-name to descriptor.
 pub fn (db Client) schema() !map[string]json2.Any {
 	body := db.raw_request(.get, '/kit/schema', none) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 	obj := value.as_map()
-	tables_any := obj['tables'] or { return map[string]json2.Any{}}
-	tables_map := tables_any.as_map()
-	mut out := map[string]json2.Any{}
-	for k, v in tables_map {
-		out[k] = v
-	}
-	return out
+	tables_any := obj['tables'] or { return map[string]json2.Any{} }
+	return tables_any.as_map()
 }
 
 // schema_for returns the descriptor for a single table.
 pub fn (db Client) schema_for(table string) !json2.Any {
 	path := '/kit/schema/' + url_path_escape(table)
 	body := db.raw_request(.get, path, none) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
-	return value
+	return json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 }
 
 // ── Internal HTTP plumbing ────────────────────────────────────────────────
@@ -518,12 +504,10 @@ fn commit_txn(db Client, ops []json2.Any, idempotency_key string) ![]json2.Any {
 	}
 	payload := json2.Any(entries)
 	body := post_json(db, '/kit/txn', payload) or { return err }
-	mut parser := json2.new_parser(body, .default) or { return err }
-	value := parser.decode() or { return merr(.json_error, 'malformed JSON body')}
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 	obj := value.as_map()
-	results_any := obj['results'] or { return []json2.Any{}}
-	results := results_any.array() or { return []json2.Any{}}
-	return results
+	results_any := obj['results'] or { return []json2.Any{} }
+	return results_any.as_array()
 }
 
 // post_json performs a POST with a JSON body (Content-Type: application/json)
@@ -538,9 +522,9 @@ fn (db Client) raw_request(method http.Method, path string, body ?string) !strin
 	url := db.base_url + '/' + path.trim_left('/')
 
 	mut header := http.new_header()
-	header.add(.accept, 'application/json') or {}
+	header.add(.accept, 'application/json')
 	if body != none {
-		header.add(.content_type, 'application/json') or {}
+		header.add(.content_type, 'application/json')
 	}
 	// Bearer token takes precedence over basic auth.
 	if db.token != '' {
@@ -555,26 +539,19 @@ fn (db Client) raw_request(method http.Method, path string, body ?string) !strin
 	// smuggling relies on injecting \r\n into headers or the request line.
 	crlf_check(header) or { return err }
 
-	mut req := http.Request{
-		method: method
-		url: url
-		header: header
+	data := body or { '' }
+	resp := http.fetch(url: url, method: method, header: header, data: data) or {
+		return merr(.http_error, err.msg())
 	}
-	if body != none {
-		req.body = body or { '' }
-		req.header.add(.content_type, 'application/json') or {}
-	}
-
-	resp := http.fetch(req) or { return merr(.http_error, err.msg)}
 
 	// Cap the response: a body larger than max_response_bytes is aborted.
 	if u64(resp.body.len) > max_response_bytes {
-		return merr(.response_too_large, "")
+		return merr(.response_too_large, '')
 	}
 
 	code := resp.status_code
 	if code < 200 || code >= 300 {
-		return map_status(code)
+		return map_status(code)!
 	}
 	return resp.body
 }
@@ -582,27 +559,29 @@ fn (db Client) raw_request(method http.Method, path string, body ?string) !strin
 // crlf_check rejects any request header that contains a raw CR or LF, which
 // would let an attacker inject additional headers or split the request.
 fn crlf_check(header http.Header) ! {
-	for h in header.data.keys() {
-		val := header.data[h] or { '' }
-		if val.contains('\r') || val.contains('\n') {
-			return merr(.query, 'request header contains CRLF')
+	for k in header.keys() {
+		for val in header.custom_values(k, exact: true) {
+			if val.contains('\r') || val.contains('\n') {
+				return merr(.query, 'request header contains CRLF')
+			}
 		}
 	}
 }
 
 // map_status maps an HTTP status code to a typed `MongrelError`.
 fn map_status(code int) !MongrelError {
-	if code == 300 || code == 301 || code == 302 || code == 303 || code == 304 || code == 307 || code == 308 {
+	if code == 300 || code == 301 || code == 302 || code == 303 || code == 304 || code == 307
+		|| code == 308 {
 		return merr(.http_error, 'redirect')
 	}
 	if code == 401 || code == 403 {
-		return merr(.auth, "")
+		return merr(.auth, '')
 	}
 	if code == 402 || code == 409 {
-		return merr(.conflict, "")
+		return merr(.conflict, '')
 	}
 	if code == 404 {
-		return merr(.not_found, "")
+		return merr(.not_found, '')
 	}
 	if code >= 500 && code <= 599 {
 		return merr(.http_error, 'server error ' + code.str())
@@ -727,8 +706,7 @@ fn nibble_to_hex(n u8) u8 {
 // base64_encode base64-encodes a string for HTTP Basic auth credentials.
 fn base64_encode(input string) string {
 	// Use the standard library's base64 encoder from encoding.base64.
-	mut encoder := base64.new_encoder(base64.standard_alphabet, true)
-	return encoder.encode(input.bytes())
+	return base64.encode_str(input)
 }
 
 // ── Value constructors ────────────────────────────────────────────────────

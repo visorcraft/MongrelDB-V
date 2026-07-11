@@ -9,10 +9,8 @@
 // Creates a table, inserts three rows, counts them, queries all rows, "updates"
 // one row by overwriting it at its primary key, deletes one row, then drops
 // the table. Progress is printed at every step.
-
 import rand
 import time
-
 import mongreldb
 
 fn main() {
@@ -54,20 +52,36 @@ fn main() {
 		mongreldb.Cell{1, mongreldb.int_value(2)},
 		mongreldb.Cell{2, mongreldb.string_value('Bob')},
 		mongreldb.Cell{3, mongreldb.float_value(82.0)},
-	], '') or { eprintln('put failed: ${err}'); cleanup(db, table); exit(1) }
+	], '') or {
+		eprintln('put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	db.put(table, [
 		mongreldb.Cell{1, mongreldb.int_value(3)},
 		mongreldb.Cell{2, mongreldb.string_value('Carol')},
 		mongreldb.Cell{3, mongreldb.float_value(78.3)},
-	], '') or { eprintln('put failed: ${err}'); cleanup(db, table); exit(1) }
+	], '') or {
+		eprintln('put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	println('Inserted 3 rows')
 
-	total := db.count(table) or { eprintln('count failed: ${err}'); cleanup(db, table); exit(1) }
+	total := db.count(table) or {
+		eprintln('count failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	println('Total rows: ${total}')
 
 	// Query all rows (no conditions).
 	mut q := db.query(table)
-	rows := q.execute() or { eprintln('query failed: ${err}'); cleanup(db, table); exit(1) }
+	rows := q.execute() or {
+		eprintln('query failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	println('Query returned ${rows.len} rows')
 
 	// Update Alice's score by re-putting the same primary key with new values.
@@ -75,7 +89,11 @@ fn main() {
 		mongreldb.Cell{1, mongreldb.int_value(1)},
 		mongreldb.Cell{2, mongreldb.string_value('Alice')},
 		mongreldb.Cell{3, mongreldb.float_value(100.0)},
-	], '') or { eprintln('update put failed: ${err}'); cleanup(db, table); exit(1) }
+	], '') or {
+		eprintln('update put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	println("Updated Alice's score to 100.0")
 
 	// Delete Carol (primary key 3).
@@ -97,7 +115,7 @@ fn cleanup(db mongreldb.Client, table string) {
 
 fn unique_name(prefix string) string {
 	// Use a millisecond timestamp + a random suffix for uniqueness.
-	ts := time.now().unix_time_milli()
+	ts := time.now().unix_milli()
 	ulid := rand.ulid()
 	return '${prefix}_${ts}_${ulid}'
 }

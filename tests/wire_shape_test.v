@@ -13,11 +13,11 @@ import mongreldb
 
 fn test_column_to_json_emits_enum_and_default() {
 	col := mongreldb.Column{
-		id: 1
-		name: 'color'
-		ty: 'string'
-		primary_key: false
-		nullable: false
+		id:            1
+		name:          'color'
+		ty:            'string'
+		primary_key:   false
+		nullable:      false
 		enum_variants: ['a', 'b']
 		default_value: 'a'
 	}
@@ -28,11 +28,11 @@ fn test_column_to_json_emits_enum_and_default() {
 
 fn test_column_to_json_omits_absent_enum_and_default() {
 	col := mongreldb.Column{
-		id: 2
-		name: 'amount'
-		ty: 'int64'
+		id:          2
+		name:        'amount'
+		ty:          'int64'
 		primary_key: true
-		nullable: false
+		nullable:    false
 	}
 	s := mongreldb.column_to_json_string(col)
 	// Both keys must be absent so the wire shape matches the baseline.
@@ -44,11 +44,11 @@ fn test_column_to_json_omits_absent_enum_and_default() {
 
 fn test_column_to_json_omits_empty_enum() {
 	col := mongreldb.Column{
-		id: 3
-		name: 'label'
-		ty: 'string'
-		primary_key: false
-		nullable: false
+		id:            3
+		name:          'label'
+		ty:            'string'
+		primary_key:   false
+		nullable:      false
 		default_value: 'x'
 	}
 	s := mongreldb.column_to_json_string(col)

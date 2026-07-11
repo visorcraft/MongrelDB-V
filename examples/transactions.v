@@ -10,10 +10,8 @@
 // atomically, verifies the count, then demonstrates idempotent retries by
 // re-committing with the same idempotency key (the daemon returns the original
 // result and applies no duplicate rows). Cleans up by dropping the table.
-
 import rand
 import time
-
 import mongreldb
 
 fn main() {
@@ -36,7 +34,10 @@ fn main() {
 		mongreldb.Column{1, 'id', 'int64', true, false, [], ''},
 		mongreldb.Column{2, 'name', 'varchar', false, false, [], ''},
 		mongreldb.Column{3, 'score', 'float64', false, false, [], ''},
-	]) or { eprintln('create_table failed: ${err}'); exit(1) }
+	]) or {
+		eprintln('create_table failed: ${err}')
+		exit(1)
+	}
 	println('Created table ${table}')
 
 	// Stage three puts and commit them atomically. Either every op lands or
@@ -46,17 +47,29 @@ fn main() {
 		mongreldb.Cell{1, mongreldb.int_value(1)},
 		mongreldb.Cell{2, mongreldb.string_value('Alice')},
 		mongreldb.Cell{3, mongreldb.float_value(95.5)},
-	], false) or { eprintln('txn_put failed: ${err}'); cleanup(db, table); exit(1) }
+	], false) or {
+		eprintln('txn_put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	txn = txn.txn_put(table, [
 		mongreldb.Cell{1, mongreldb.int_value(2)},
 		mongreldb.Cell{2, mongreldb.string_value('Bob')},
 		mongreldb.Cell{3, mongreldb.float_value(82.0)},
-	], false) or { eprintln('txn_put failed: ${err}'); cleanup(db, table); exit(1) }
+	], false) or {
+		eprintln('txn_put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	txn = txn.txn_put(table, [
 		mongreldb.Cell{1, mongreldb.int_value(3)},
 		mongreldb.Cell{2, mongreldb.string_value('Carol')},
 		mongreldb.Cell{3, mongreldb.float_value(78.3)},
-	], false) or { eprintln('txn_put failed: ${err}'); cleanup(db, table); exit(1) }
+	], false) or {
+		eprintln('txn_put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	println('Staged ${txn.txn_count()} operations')
 
 	results, mut committed := txn.commit('') or {
@@ -77,8 +90,16 @@ fn main() {
 		mongreldb.Cell{1, mongreldb.int_value(4)},
 		mongreldb.Cell{2, mongreldb.string_value('Dave')},
 		mongreldb.Cell{3, mongreldb.float_value(60.0)},
-	], false) or { eprintln('retry txn_put failed: ${err}'); cleanup(db, table); exit(1) }
-	_ = retry.commit(idempotency_key) or { eprintln('retry commit failed: ${err}'); cleanup(db, table); exit(1) }
+	], false) or {
+		eprintln('retry txn_put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
+	_, _ = retry.commit(idempotency_key) or {
+		eprintln('retry commit failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	after_first := db.count(table) or { 0 }
 	println('After first idempotent commit: ${after_first} rows')
 
@@ -87,8 +108,16 @@ fn main() {
 		mongreldb.Cell{1, mongreldb.int_value(4)},
 		mongreldb.Cell{2, mongreldb.string_value('Dave')},
 		mongreldb.Cell{3, mongreldb.float_value(60.0)},
-	], false) or { eprintln('retry2 txn_put failed: ${err}'); cleanup(db, table); exit(1) }
-	_ = retry2.commit(idempotency_key) or { eprintln('retry2 commit failed: ${err}'); cleanup(db, table); exit(1) }
+	], false) or {
+		eprintln('retry2 txn_put failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
+	_, _ = retry2.commit(idempotency_key) or {
+		eprintln('retry2 commit failed: ${err}')
+		cleanup(db, table)
+		exit(1)
+	}
 	after_dup := db.count(table) or { 0 }
 	println('After duplicate idempotent commit (same key): ${after_dup} rows (no double-apply)')
 
@@ -102,7 +131,7 @@ fn cleanup(db mongreldb.Client, table string) {
 }
 
 fn unique_suffix() string {
-	ts := time.now().unix_time_milli()
+	ts := time.now().unix_milli()
 	ulid := rand.ulid()
 	return '${ts}_${ulid}'
 }

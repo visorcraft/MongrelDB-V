@@ -28,10 +28,10 @@ jobs:
         run: v version
 
       - name: Format check
-        run: v fmt -verify src tests examples
+        run: v fmt -verify mongreldb tests examples
 
       - name: Build
-        run: v -W -cflags "-Wall" src/mongreldb.v
+        run: v -shared -W mongreldb
 
       - name: Run offline unit tests
         # The test step runs the live suite; without a daemon every live test
@@ -58,7 +58,7 @@ jobs:
         run: v version
 
       - name: Build
-        run: v -W -cflags "-Wall" src/mongreldb.v
+        run: v -shared -W mongreldb
 
       - name: Cache mongreldb-server binary
         id: server-cache
