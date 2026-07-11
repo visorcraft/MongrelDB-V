@@ -10,6 +10,7 @@
 module mongreldb_wire_test
 
 import mongreldb
+import x.json2
 
 fn test_column_to_json_emits_enum_and_default() {
 	col := mongreldb.Column{
@@ -24,6 +25,25 @@ fn test_column_to_json_emits_enum_and_default() {
 	s := mongreldb.column_to_json_string(col)
 	assert s.contains('"enum_variants":["a","b"]')
 	assert s.contains('"default_value":"a"')
+}
+
+fn test_create_table_payload_emits_checks() {
+	constraints_value := json2.decode[json2.Any]('{"checks":[{"id":1,"name":"ck_color","expr":{"IsNotNull":1}}]}') or {
+		assert false
+		return
+	}
+	payload := mongreldb.create_table_payload('colors', [mongreldb.Column{
+		id: 1
+		name: 'color'
+		ty: 'enum'
+		enum_variants: ['red', 'blue']
+		default_value: 'red'
+	}], constraints_value.as_map()).json_str()
+	assert payload.contains('"enum_variants":["red","blue"]')
+	assert payload.contains('"default_value":"red"')
+	assert payload.contains('"constraints"')
+	assert payload.contains('"checks"')
+	assert payload.contains('"IsNotNull":1')
 }
 
 fn test_column_to_json_omits_absent_enum_and_default() {

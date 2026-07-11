@@ -51,16 +51,18 @@ Task-focused, commented guides live in [`docs/`](docs):
 
 ```v
 import mongreldb
+import x.json2
 
 fn main() {
 	mut db := mongreldb.connect('http://127.0.0.1:8453', mongreldb.Options{})
 
 	// Create a table. Column ids are stable on-wire identifiers.
-	tid := db.create_table('orders', [
+	constraints := json2.decode[json2.Any]('{"checks":[{"id":1,"name":"ck_customer","expr":{"IsNotNull":2}}]}')!
+	tid := db.create_table_with_constraints('orders', [
 		mongreldb.Column{1, 'id', 'int64', true, false, [], ''},
 		mongreldb.Column{2, 'customer', 'varchar', false, false, [], ''},
 		mongreldb.Column{3, 'amount', 'float64', false, false, [], ''},
-	]) or { panic(err) }
+	], constraints.as_map()) or { panic(err) }
 
 	// Insert rows (cells pair column id -> value).
 	db.put('orders', [
@@ -194,6 +196,7 @@ res := db.schema_for('missing_table') or {
 | `health() !bool` | Check daemon health |
 | `table_names() ![]string` | List table names |
 | `create_table(name, columns) !i64` | Create a table; returns the table id |
+| `create_table_with_constraints(name, columns, constraints) !i64` | Create a table with checks/unique/FK constraints |
 | `drop_table(name) !` | Drop a table |
 | `count(table) !i64` | Row count |
 | `put(table, cells, key) !Any` | Insert a row |

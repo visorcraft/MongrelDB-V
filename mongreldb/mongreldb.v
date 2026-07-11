@@ -189,6 +189,28 @@ pub fn (db Client) table_names() ![]string {
 // create_table creates a table named `name` with the given columns and
 // returns the assigned table id.
 pub fn (db Client) create_table(name string, columns []Column) !i64 {
+	payload := create_table_payload(name, columns, map[string]json2.Any{})
+	return db.send_create_table(payload)
+}
+
+// create_table_with_constraints creates a table with the daemon's full
+// TableConstraints object, including constraints.checks.
+pub fn (db Client) create_table_with_constraints(name string, columns []Column, constraints map[string]json2.Any) !i64 {
+	payload := create_table_payload(name, columns, constraints)
+	return db.send_create_table(payload)
+}
+
+fn (db Client) send_create_table(payload json2.Any) !i64 {
+	body := post_json(db, '/kit/create_table', payload) or { return err }
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
+	obj := value.as_map()
+	tid_any := obj['table_id'] or { return merr(.json_error, 'missing table_id') }
+	return tid_any.i64()
+}
+
+// create_table_payload builds the exact JSON value sent to /kit/create_table.
+// An empty constraints map is omitted for backward-compatible wire output.
+pub fn create_table_payload(name string, columns []Column, constraints map[string]json2.Any) json2.Any {
 	mut col_arr := []json2.Any{}
 	for c in columns {
 		col_arr << column_to_any(c)
@@ -196,12 +218,10 @@ pub fn (db Client) create_table(name string, columns []Column) !i64 {
 	mut entries := map[string]json2.Any{}
 	entries['name'] = json2.Any(name)
 	entries['columns'] = json2.Any(col_arr)
-	payload := json2.Any(entries)
-	body := post_json(db, '/kit/create_table', payload) or { return err }
-	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
-	obj := value.as_map()
-	tid_any := obj['table_id'] or { return merr(.json_error, 'missing table_id') }
-	return tid_any.i64()
+	if constraints.len > 0 {
+		entries['constraints'] = json2.Any(constraints)
+	}
+	return json2.Any(entries)
 }
 
 // drop_table drops a table by name.
