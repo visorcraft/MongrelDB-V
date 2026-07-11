@@ -36,7 +36,10 @@ jobs:
       - name: Run offline unit tests
         # The test step runs the live suite; without a daemon every live test
         # self-skips, so this still exercises all offline logic (wire-shape).
-        run: v test .
+        # Scope to tests/ only -- `v test .` would also descend into the V
+        # toolchain checkout (vlang/vlang_linux_x64) installed inside the
+        # working directory and run thousands of unrelated stdlib tests.
+        run: v test tests/
 
   live:
     # Boots a real mongreldb-server and runs the live round-trip suite.
@@ -92,7 +95,9 @@ jobs:
           curl -sf http://127.0.0.1:8453/health >/dev/null || (cat /tmp/mongreldb-server.log && exit 1)
 
       - name: Run live tests
-        run: v test .
+        # Scope to tests/ only -- `v test .` would also descend into the V
+        # toolchain checkout installed inside the working directory.
+        run: v test tests/
 
       - name: Run examples
         run: |
