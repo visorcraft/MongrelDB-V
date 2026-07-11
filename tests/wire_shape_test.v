@@ -32,13 +32,15 @@ fn test_create_table_payload_emits_checks() {
 		assert false
 		return
 	}
-	payload := mongreldb.create_table_payload('colors', [mongreldb.Column{
-		id: 1
-		name: 'color'
-		ty: 'enum'
-		enum_variants: ['red', 'blue']
-		default_value: 'red'
-	}], constraints_value.as_map()).json_str()
+	payload := mongreldb.create_table_payload('colors', [
+		mongreldb.Column{
+			id:            1
+			name:          'color'
+			ty:            'enum'
+			enum_variants: ['red', 'blue']
+			default_value: 'red'
+		},
+	], constraints_value.as_map()).json_str()
 	assert payload.contains('"enum_variants":["red","blue"]')
 	assert payload.contains('"default_value":"red"')
 	assert payload.contains('"constraints"')
