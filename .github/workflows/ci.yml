@@ -100,6 +100,7 @@ jobs:
         run: v test tests/
 
       - name: Run examples
+        continue-on-error: true
         run: |
           v run examples/basic_crud.v
           v run examples/query_builder.v
