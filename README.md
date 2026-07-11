@@ -251,7 +251,7 @@ Fetch a prebuilt server binary from the [MongrelDB releases](https://github.com/
 ```sh
 mkdir -p bin
 curl -fsSL -o bin/mongreldb-server \
-  https://github.com/visorcraft/MongrelDB/releases/download/v0.46.2/mongreldb-server-linux-x64
+  https://github.com/visorcraft/MongrelDB/releases/download/v0.48.0/mongreldb-server-linux-x64
 chmod +x bin/mongreldb-server
 ```
 
@@ -270,7 +270,7 @@ Contributions are welcome. Please:
 
 ## History retention
 
-Use `history_retention`, `set_history_retention_epochs`, and the returned `earliest_retained_epoch` with MongrelDB 0.47.1+.
+Use `history_retention`, `set_history_retention_epochs`, and the returned `earliest_retained_epoch` with MongrelDB 0.48.0+.
 
 ## License
 
