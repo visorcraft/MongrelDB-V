@@ -268,6 +268,10 @@ Contributions are welcome. Please:
 2. Add focused tests near your change - the suite must stay green.
 3. Keep the client a thin wrapper over `mongreldb-server`.
 
+## History retention
+
+Use `history_retention`, `set_history_retention_epochs`, and the returned `earliest_retained_epoch` with MongrelDB 0.47.1+.
+
 ## License
 
 Dual-licensed under the **MIT License** or the **Apache License, Version 2.0**,

@@ -177,6 +177,27 @@ pub fn (db Client) health() !bool {
 	return true
 }
 
+pub struct HistoryRetention {
+pub:
+	history_retention_epochs i64
+	earliest_retained_epoch  i64
+}
+
+pub fn (db Client) history_retention() !HistoryRetention {
+	body := db.raw_request(.get, '/history/retention', none)!
+	obj := json2.decode[json2.Any](body)!.as_map()
+	return HistoryRetention{obj['history_retention_epochs']!.i64(), obj['earliest_retained_epoch']!.i64()}
+}
+
+pub fn (db Client) set_history_retention_epochs(epochs i64) !HistoryRetention {
+	payload := json2.Any({
+		'history_retention_epochs': json2.Any(epochs)
+	})
+	body := db.raw_request(.put, '/history/retention', payload.json_str())!
+	obj := json2.decode[json2.Any](body)!.as_map()
+	return HistoryRetention{obj['history_retention_epochs']!.i64(), obj['earliest_retained_epoch']!.i64()}
+}
+
 // table_names lists all table names in the database.
 pub fn (db Client) table_names() ![]string {
 	body := db.raw_request(.get, '/tables', none) or { return err }

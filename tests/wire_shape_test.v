@@ -91,6 +91,25 @@ fn test_column_to_json_emits_boolean_default() {
 	assert s.contains('"default_value":true')
 }
 
+fn test_column_to_json_emits_number_and_null_defaults() {
+	number := mongreldb.column_to_json_string(mongreldb.Column{
+		id:                 5
+		name:               'retries'
+		ty:                 'int64'
+		has_default_scalar: true
+		default_scalar:     json2.Any(i64(3))
+	})
+	null_value := mongreldb.column_to_json_string(mongreldb.Column{
+		id:                 6
+		name:               'optional'
+		ty:                 'varchar'
+		has_default_scalar: true
+		default_scalar:     json2.Any(json2.null)
+	})
+	assert number.contains('"default_value":3')
+	assert null_value.contains('"default_value":null')
+}
+
 fn test_column_to_json_emits_dynamic_default_expr() {
 	col := mongreldb.Column{
 		id:                 5
