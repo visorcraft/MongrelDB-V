@@ -169,10 +169,12 @@ fn test_url_path_escape_encodes_reserved() {
 // response keys, and the propagation of a non-2xx response to a typed
 // MongrelError. Uses only the standard library - no new dependency.
 
-// shared mock_state carries the last recorded request and the canned response
+// mock_state carries the last recorded request and the canned response
 // between the handler (running on the server thread) and the test thread.
-shared mock_state := MockState{}
-
+// It is allocated as a `shared` value inside `start_mock_server` and shared
+// between the handler and the test via parameters - V no longer permits
+// top-level `shared` declarations, and `__global` would require
+// `-enable-globals`. The handler writes under `lock`; readers use `rlock`.
 struct MockState {
 mut:
 	method    string
@@ -183,22 +185,23 @@ mut:
 }
 
 // MockHandler is an `net.http.Handler` that records each incoming request
-// into `shared mock_state` and returns the canned status+body. V satisfies
+// into its `shared state` and returns the canned status+body. V satisfies
 // interfaces structurally, so defining `handle` with a matching signature is
 // enough; no explicit `impl` clause is needed.
-struct MockHandler {}
+struct MockHandler {
+	state shared MockState
+}
 
 fn (mut h MockHandler) handle(req http.Request) http.Response {
 	// Record the request method/path/body for the test to assert against.
-	lock mock_state {
-		mock_state.method = req.method.str()
-		mock_state.url = req.url
-		mock_state.body = req.data
+	lock h.state {
+		h.state.method = req.method.str()
+		h.state.url = req.url
+		h.state.body = req.data
 	}
 	// Snapshot the canned response under the read lock.
-	status, resp_body := rlock mock_state {
-		mock_state.status
-		mock_state.resp_body
+	status, resp_body := rlock h.state {
+		h.state.status, h.state.resp_body
 	}
 	return http.Response{
 		status_code: status
@@ -208,44 +211,48 @@ fn (mut h MockHandler) handle(req http.Request) http.Response {
 
 // reset_mock installs a fresh canned 200 response and clears the recorded
 // request fields, so each test starts from a known state.
-fn reset_mock(status int, resp_body string) {
-	lock mock_state {
-		mock_state.method = ''
-		mock_state.url = ''
-		mock_state.body = ''
-		mock_state.status = status
-		mock_state.resp_body = resp_body
+fn reset_mock(shared state MockState, status int, resp_body string) {
+	lock state {
+		state.method = ''
+		state.url = ''
+		state.body = ''
+		state.status = status
+		state.resp_body = resp_body
 	}
 }
 
 // last_method/last_url/last_body read the recorded request fields. They use
 // the shared-variable read lock so the server thread cannot tear the read.
-fn last_method() string {
-	return rlock mock_state {
-		mock_state.method
+fn last_method(shared state MockState) string {
+	return rlock state {
+		state.method
 	}
 }
 
-fn last_url() string {
-	return rlock mock_state {
-		mock_state.url
+fn last_url(shared state MockState) string {
+	return rlock state {
+		state.url
 	}
 }
 
-fn last_body() string {
-	return rlock mock_state {
-		mock_state.body
+fn last_body(shared state MockState) string {
+	return rlock state {
+		state.body
 	}
 }
 
 // start_mock_server binds a `net.http.Server` to a kernel-assigned port on
 // 127.0.0.1 and starts `listen_and_serve` in a background thread. The server
 // is heap-allocated and returned by reference so it outlives this helper's
-// stack frame; the caller must `close()` it when done.
-fn start_mock_server() !(&http.Server, string) {
+// stack frame; the caller must `close()` it when done. The caller supplies
+// the `shared MockState` so the same instance is reachable from both the
+// handler (server thread) and the test (test thread).
+fn start_mock_server(shared state MockState) !(&http.Server, string) {
 	mut server := &http.Server{
 		addr:                 ':0'
-		handler:              MockHandler{}
+		handler:              MockHandler{
+			state: state
+		}
 		show_startup_message: false
 	}
 	// Spawn listen_and_serve on a background thread. The server is
@@ -259,8 +266,9 @@ fn start_mock_server() !(&http.Server, string) {
 }
 
 fn test_history_retention_transport_get_method_and_path() {
-	reset_mock(200, '{"history_retention_epochs":250,"earliest_retained_epoch":5}')
-	server, url := start_mock_server() or {
+	shared state := MockState{}
+	reset_mock(shared state, 200, '{"history_retention_epochs":250,"earliest_retained_epoch":5}')
+	mut server, url := start_mock_server(shared state) or {
 		assert false
 		return
 	}
@@ -274,13 +282,14 @@ fn test_history_retention_transport_get_method_and_path() {
 	}
 	assert hr.history_retention_epochs == u64(250)
 	assert hr.earliest_retained_epoch == u64(5)
-	assert last_method() == 'GET'
-	assert last_url().contains('/history/retention')
+	assert last_method(shared state) == 'GET'
+	assert last_url(shared state).contains('/history/retention')
 }
 
 fn test_history_retention_transport_put_method_path_and_body_key() {
-	reset_mock(200, '{"history_retention_epochs":2048,"earliest_retained_epoch":7}')
-	server, url := start_mock_server() or {
+	shared state := MockState{}
+	reset_mock(shared state, 200, '{"history_retention_epochs":2048,"earliest_retained_epoch":7}')
+	mut server, url := start_mock_server(shared state) or {
 		assert false
 		return
 	}
@@ -294,26 +303,31 @@ fn test_history_retention_transport_put_method_path_and_body_key() {
 	}
 	assert hr.history_retention_epochs == u64(2048)
 	assert hr.earliest_retained_epoch == u64(7)
-	assert last_method() == 'PUT'
-	assert last_url().contains('/history/retention')
+	assert last_method(shared state) == 'PUT'
+	assert last_url(shared state).contains('/history/retention')
 	// The PUT body must carry the single key the server reads.
-	assert last_body().contains('"history_retention_epochs":2048')
+	assert last_body(shared state).contains('"history_retention_epochs":2048')
 }
 
 fn test_history_retention_transport_non_2xx_propagates_as_typed_error() {
-	// 500 maps to MongrelErrorKind.http_error in map_status.
-	reset_mock(500, '{"error":{"message":"boom"}}')
-	server, url := start_mock_server() or {
+	shared state := MockState{}
+	mut server, url := start_mock_server(shared state) or {
 		assert false
 		return
 	}
 	defer {
 		server.close()
 	}
+	// 500 maps to MongrelErrorKind.http_error in map_status.
+	reset_mock(shared state, 500, '{"error":{"message":"boom"}}')
 	mut db := mongreldb.connect(url, mongreldb.Options{})
 	hr := db.history_retention() or {
 		// Verify the error category so we know it was mapped, not just any panic.
-		assert err.kind == .http_error
+		if err is mongreldb.MongrelError {
+			assert err.kind == .http_error
+		} else {
+			assert false
+		}
 		return
 	}
 	// If we somehow got a value back, the mock did not emit 500 as intended.
@@ -322,18 +336,23 @@ fn test_history_retention_transport_non_2xx_propagates_as_typed_error() {
 }
 
 fn test_history_retention_transport_404_propagates_as_not_found() {
-	// 404 maps to MongrelErrorKind.not_found.
-	reset_mock(404, '{"error":{"message":"no such setting"}}')
-	server, url := start_mock_server() or {
+	shared state := MockState{}
+	mut server, url := start_mock_server(shared state) or {
 		assert false
 		return
 	}
 	defer {
 		server.close()
 	}
+	// 404 maps to MongrelErrorKind.not_found.
+	reset_mock(shared state, 404, '{"error":{"message":"no such setting"}}')
 	mut db := mongreldb.connect(url, mongreldb.Options{})
 	_ = db.set_history_retention_epochs(u64(1)) or {
-		assert err.kind == .not_found
+		if err is mongreldb.MongrelError {
+			assert err.kind == .not_found
+		} else {
+			assert false
+		}
 		return
 	}
 	assert false
