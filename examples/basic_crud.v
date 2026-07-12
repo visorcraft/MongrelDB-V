@@ -29,9 +29,9 @@ fn main() {
 
 	// Create the table. Schema: id (int64 PK), name (varchar), score (float64).
 	tid := db.create_table(table, [
-		mongreldb.Column{id: 1, name: 'id', ty: 'int64', primary_key: true},
-		mongreldb.Column{id: 2, name: 'name', ty: 'varchar'},
-		mongreldb.Column{id: 3, name: 'score', ty: 'float64'},
+		mongreldb.Column{ id: 1, name: 'id', ty: 'int64', primary_key: true },
+		mongreldb.Column{ id: 2, name: 'name', ty: 'varchar' },
+		mongreldb.Column{ id: 3, name: 'score', ty: 'float64' },
 	]) or {
 		eprintln('create_table failed: ${err}')
 		exit(1)

@@ -178,7 +178,7 @@ mut:
 	method    string
 	url       string
 	body      string
-	status    int = 200
+	status    int    = 200
 	resp_body string = '{}'
 }
 
@@ -202,7 +202,7 @@ fn (mut h MockHandler) handle(req http.Request) http.Response {
 	}
 	return http.Response{
 		status_code: status
-		body: resp_body
+		body:        resp_body
 	}
 }
 
@@ -244,8 +244,8 @@ fn last_body() string {
 // stack frame; the caller must `close()` it when done.
 fn start_mock_server() !(&http.Server, string) {
 	mut server := &http.Server{
-		addr: ':0'
-		handler: MockHandler{}
+		addr:                 ':0'
+		handler:              MockHandler{}
 		show_startup_message: false
 	}
 	// Spawn listen_and_serve on a background thread. The server is

@@ -75,6 +75,7 @@ fn merr(kind MongrelErrorKind, message string) MongrelError {
 }
 
 // Client is the MongrelDB HTTP client. Create one with `connect`.
+@[heap]
 pub struct Client {
 pub:
 	base_url string
@@ -624,8 +625,16 @@ fn commit_txn(db Client, ops []json2.Any, idempotency_key string) !TxnResult {
 		}
 	}
 
-	results_any := obj['results'] or { return TxnResult{results: []json2.Any{}, epoch: epoch} }
-	return TxnResult{results: results_any.as_array(), epoch: epoch}
+	results_any := obj['results'] or {
+		return TxnResult{
+			results: []json2.Any{}
+			epoch:   epoch
+		}
+	}
+	return TxnResult{
+		results: results_any.as_array()
+		epoch:   epoch
+	}
 }
 
 // post_json performs a POST with a JSON body (Content-Type: application/json)
