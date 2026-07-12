@@ -259,10 +259,11 @@ fn start_mock_server(shared state MockState) !(&http.Server, string) {
 	// heap-allocated so the pointer the caller receives and the pointer the
 	// server thread operates on reference the same Server instance.
 	spawn server.listen_and_serve()
-	// `wait_till_running` blocks until the listener is bound and returns the
-	// assigned port number.
-	port := server.wait_till_running() or { return error('mock server did not start') }
-	return server, 'http://127.0.0.1:${port}'
+	// `wait_till_running` blocks until the listener is bound; once it
+	// returns, `server.addr` holds the kernel-assigned address. Note: the
+	// function returns the retry count, not the port.
+	server.wait_till_running() or { return error('mock server did not start') }
+	return server, 'http://${server.addr}'
 }
 
 fn test_history_retention_transport_get_method_and_path() {
