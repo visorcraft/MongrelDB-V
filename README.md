@@ -20,7 +20,7 @@
 
 | Surface | Module | Install |
 |---|---|---|
-| V client | `mongreldb` | drop `src/mongreldb.v` into your module path |
+| V client | `mongreldb` | drop `mongreldb/mongreldb.v` into your module path |
 
 ## Requirements
 
@@ -59,9 +59,9 @@ fn main() {
 	// Create a table. Column ids are stable on-wire identifiers.
 	constraints := json2.decode[json2.Any]('{"checks":[{"id":1,"name":"ck_customer","expr":{"IsNotNull":2}}]}')!
 	tid := db.create_table_with_constraints('orders', [
-		mongreldb.Column{1, 'id', 'int64', true, false, [], ''},
-		mongreldb.Column{2, 'customer', 'varchar', false, false, [], ''},
-		mongreldb.Column{3, 'amount', 'float64', false, false, [], ''},
+		mongreldb.Column{id: 1, name: 'id', ty: 'int64', primary_key: true},
+		mongreldb.Column{id: 2, name: 'customer', ty: 'varchar'},
+		mongreldb.Column{id: 3, name: 'amount', ty: 'float64'},
 	], constraints.as_map()) or { panic(err) }
 
 	// Insert rows (cells pair column id -> value).
@@ -167,11 +167,14 @@ Every non-2xx response is mapped to a typed error. Match on the variant.
 
 ```v
 res := db.schema_for('missing_table') or {
-	match err {
-		mongreldb.MongrelError{...not_found} { println('not found') }
-		mongreldb.MongrelError{...conflict} { println('constraint violation') }
-		mongreldb.MongrelError{...auth} { println('not authorized') }
-		else { println('query/server error') }
+	if err is mongreldb.MongrelError {
+		e := err as mongreldb.MongrelError
+		match e.kind {
+			.not_found { println('not found') }
+			.conflict { println('constraint violation') }
+			.auth { println('not authorized') }
+			else { println('query/server error') }
+		}
 	}
 	return
 }
@@ -188,6 +191,9 @@ res := db.schema_for('missing_table') or {
 
 ## API reference
 
+Methods marked `mut` require the client variable to be declared `mut db := ...`;
+they may update `db.last_epoch` from the server's commit epoch.
+
 ### `mongreldb`
 
 | Method | Description |
@@ -199,15 +205,18 @@ res := db.schema_for('missing_table') or {
 | `create_table_with_constraints(name, columns, constraints) !i64` | Create a table with checks/unique/FK constraints |
 | `drop_table(name) !` | Drop a table |
 | `count(table) !i64` | Row count |
-| `put(table, cells, key) !Any` | Insert a row |
-| `upsert(table, cells, update_cells, key) !Any` | Insert or update on PK conflict |
-| `delete(table, row_id) !` | Delete by row id |
-| `delete_by_pk(table, pk) !` | Delete by primary key |
-| `query(table) QueryBuilder` | Start a native query |
-| `begin() Transaction` | Start a batch |
-| `exec_sql(sql) ![]Any` | Execute SQL |
-| `schema() !map[string]Any` | Full schema catalog |
-| `schema_for(table) !Any` | Single-table descriptor |
+| `mut put(table, cells, key) !json2.Any` | Insert a row |
+| `mut upsert(table, cells, update_cells, key) !json2.Any` | Insert or update on PK conflict |
+| `mut delete(table, row_id) !` | Delete by row id |
+| `mut delete_by_pk(table, pk) !` | Delete by primary key |
+| `mut query(table) QueryBuilder` | Start a native query |
+| `mut begin() Transaction` | Start a batch |
+| `exec_sql(sql) ![]json2.Any` | Execute SQL |
+| `schema() !map[string]json2.Any` | Full schema catalog |
+| `schema_for(table) !json2.Any` | Single-table descriptor |
+| `history_retention() !HistoryRetention` | Current retention window and earliest retained epoch |
+| `set_history_retention_epochs(epochs) !HistoryRetention` | Set the durable MVCC window |
+| `last_epoch` (field) | Commit epoch of the most recent `/kit/txn` |
 
 ### `QueryBuilder`
 
@@ -216,7 +225,7 @@ res := db.schema_for('missing_table') or {
 | `where_(type, params) QueryBuilder` | Add a native condition (AND-ed) |
 | `projection(column_ids) QueryBuilder` | Set column projection |
 | `limit_(n) QueryBuilder` | Set row limit |
-| `execute() ![]Any` | Run the query; returns the rows |
+| `execute() ![]json2.Any` | Run the query; returns the rows |
 
 ### `Transaction`
 
@@ -226,7 +235,7 @@ res := db.schema_for('missing_table') or {
 | `txn_delete(table, row_id) !Transaction` | Stage a delete by row id |
 | `txn_delete_by_pk(table, pk) !Transaction` | Stage a delete by primary key |
 | `txn_count() int` | Number of staged operations |
-| `commit(key) !([]Any, Transaction)` | Commit atomically |
+| `commit(key) !([]json2.Any, Transaction)` | Commit atomically |
 | `rollback() !Transaction` | Discard all operations |
 
 ## Building and testing
@@ -257,8 +266,30 @@ chmod +x bin/mongreldb-server
 
 ### Using the client in your project
 
-Copy `src/mongreldb.v` (and its module) into your project's module path, or add
+Copy `mongreldb/mongreldb.v` (and its module) into your project's module path, or add
 this repo as a git submodule and import it.
+
+## History retention
+
+Use `history_retention`, `set_history_retention_epochs`, and `last_epoch` with
+MongrelDB 0.48.0+. The retention window controls how far back `AS OF EPOCH`
+time-travel queries can read; increasing it cannot bring back history that has
+already been pruned.
+
+```v
+// Inspect the current durable MVCC window.
+ret := db.history_retention() or { panic(err) }
+println(ret.history_retention_epochs)  // e.g. 1024
+println(ret.earliest_retained_epoch)   // e.g. 3
+
+// Widen the window. The response contains the updated values.
+updated := db.set_history_retention_epochs(u64(1000)) or { panic(err) }
+println(updated.history_retention_epochs)  // 1000
+
+// After a Kit transaction write, last_epoch holds the commit epoch.
+db.put('orders', [mongreldb.Cell{1, mongreldb.int_value(1)}], '') or { panic(err) }
+rows := db.exec_sql('SELECT id FROM orders AS OF EPOCH ${db.last_epoch}') or { panic(err) }
+```
 
 ## Contributing
 
@@ -267,10 +298,6 @@ Contributions are welcome. Please:
 1. Open an issue first for non-trivial changes.
 2. Add focused tests near your change - the suite must stay green.
 3. Keep the client a thin wrapper over `mongreldb-server`.
-
-## History retention
-
-Use `history_retention`, `set_history_retention_epochs`, and the returned `earliest_retained_epoch` with MongrelDB 0.48.0+.
 
 ## License
 

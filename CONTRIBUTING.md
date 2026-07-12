@@ -48,8 +48,8 @@ workflow on GitHub.
 Run the full CI preflight locally:
 
 ```sh
-v fmt -verify src tests examples
-v build src/mongreldb.v
+v fmt -verify mongreldb tests examples
+v -check mongreldb/mongreldb.v
 v test .
 ```
 

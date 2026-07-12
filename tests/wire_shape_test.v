@@ -125,6 +125,28 @@ fn test_column_to_json_emits_dynamic_default_expr() {
 	assert !s.contains('default_value')
 }
 
+fn test_column_to_json_emits_literal_now_and_uuid_defaults() {
+	now_col := mongreldb.Column{
+		id:            7
+		name:          'now_literal'
+		ty:            'varchar'
+		default_value: 'now'
+	}
+	uuid_col := mongreldb.Column{
+		id:            8
+		name:          'uuid_literal'
+		ty:            'varchar'
+		default_value: 'uuid'
+	}
+	assert mongreldb.column_to_json_string(now_col).contains('"default_value":"now"')
+	assert mongreldb.column_to_json_string(uuid_col).contains('"default_value":"uuid"')
+}
+
+fn test_set_history_retention_payload_shape() {
+	body := mongreldb.set_history_retention_payload(u64(2048))
+	assert body.contains('"history_retention_epochs":2048')
+}
+
 fn test_url_path_escape_passes_unreserved() {
 	// Unreserved characters pass through unchanged.
 	assert mongreldb.url_path_escape('orders_2026.1') == 'orders_2026.1'

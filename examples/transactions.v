@@ -31,9 +31,9 @@ fn main() {
 	db.drop_table(table) or {}
 
 	db.create_table(table, [
-		mongreldb.Column{1, 'id', 'int64', true, false, [], ''},
-		mongreldb.Column{2, 'name', 'varchar', false, false, [], ''},
-		mongreldb.Column{3, 'score', 'float64', false, false, [], ''},
+		mongreldb.Column{id: 1, name: 'id', ty: 'int64', primary_key: true},
+		mongreldb.Column{id: 2, name: 'name', ty: 'varchar'},
+		mongreldb.Column{id: 3, name: 'score', ty: 'float64'},
 	]) or {
 		eprintln('create_table failed: ${err}')
 		exit(1)

@@ -81,6 +81,10 @@ pub:
 	token    string
 	username string
 	password string
+pub mut:
+	// last_epoch holds the commit epoch of the most recent successful
+	// /kit/txn call, or 0 before any such call.
+	last_epoch u64
 }
 
 // Options configures a `Client`.
@@ -179,23 +183,42 @@ pub fn (db Client) health() !bool {
 
 pub struct HistoryRetention {
 pub:
-	history_retention_epochs i64
-	earliest_retained_epoch  i64
+	history_retention_epochs u64
+	earliest_retained_epoch  u64
 }
 
 pub fn (db Client) history_retention() !HistoryRetention {
 	body := db.raw_request(.get, '/history/retention', none)!
 	obj := json2.decode[json2.Any](body)!.as_map()
-	return HistoryRetention{obj['history_retention_epochs']!.i64(), obj['earliest_retained_epoch']!.i64()}
+	hep := obj['history_retention_epochs'] or {
+		return merr(.json_error, 'missing history_retention_epochs')
+	}
+	eep := obj['earliest_retained_epoch'] or {
+		return merr(.json_error, 'missing earliest_retained_epoch')
+	}
+	return HistoryRetention{hep.u64(), eep.u64()}
 }
 
-pub fn (db Client) set_history_retention_epochs(epochs i64) !HistoryRetention {
+// set_history_retention_payload builds the JSON body for the
+// /history/retention setter. Exposed so wire-shape tests can assert the
+// on-wire format without a daemon.
+pub fn set_history_retention_payload(epochs u64) string {
 	payload := json2.Any({
 		'history_retention_epochs': json2.Any(epochs)
 	})
-	body := db.raw_request(.put, '/history/retention', payload.json_str())!
+	return payload.json_str()
+}
+
+pub fn (db Client) set_history_retention_epochs(epochs u64) !HistoryRetention {
+	body := db.raw_request(.put, '/history/retention', set_history_retention_payload(epochs))!
 	obj := json2.decode[json2.Any](body)!.as_map()
-	return HistoryRetention{obj['history_retention_epochs']!.i64(), obj['earliest_retained_epoch']!.i64()}
+	hep := obj['history_retention_epochs'] or {
+		return merr(.json_error, 'missing history_retention_epochs')
+	}
+	eep := obj['earliest_retained_epoch'] or {
+		return merr(.json_error, 'missing earliest_retained_epoch')
+	}
+	return HistoryRetention{hep.u64(), eep.u64()}
 }
 
 // table_names lists all table names in the database.
@@ -269,8 +292,8 @@ pub fn (db Client) count(table string) !i64 {
 
 // put inserts a row. `idempotency_key`, if non-empty, makes the commit safe
 // to retry. Returns the per-operation result object (the first element of the
-// server's results array).
-pub fn (db Client) put(table string, cells []Cell, idempotency_key string) !json2.Any {
+// server's results array). Updates `db.last_epoch` with the commit epoch.
+pub fn (mut db Client) put(table string, cells []Cell, idempotency_key string) !json2.Any {
 	mut inner_entries := map[string]json2.Any{}
 	inner_entries['table'] = json2.Any(table)
 	inner_entries['cells'] = json2.Any(flatten_cells(cells))
@@ -280,17 +303,21 @@ pub fn (db Client) put(table string, cells []Cell, idempotency_key string) !json
 		'put': inner
 	})
 	ops := [op]
-	results := commit_txn(db, ops, idempotency_key) or { return err }
-	if results.len == 0 {
+	res := commit_txn(db, ops, idempotency_key) or { return err }
+	if res.epoch > 0 {
+		db.last_epoch = res.epoch
+	}
+	if res.results.len == 0 {
 		return json2.Any(json2.null)
 	}
-	return results[0]
+	return res.results[0]
 }
 
 // upsert inserts a row, or updates it on a primary-key conflict. `cells`
 // are the insert values; `update_cells`, when non-empty, are the values to
-// apply on a conflict (an empty list means DO NOTHING).
-pub fn (db Client) upsert(table string, cells []Cell, update_cells []Cell, idempotency_key string) !json2.Any {
+// apply on a conflict (an empty list means DO NOTHING). Updates `db.last_epoch`
+// with the commit epoch.
+pub fn (mut db Client) upsert(table string, cells []Cell, update_cells []Cell, idempotency_key string) !json2.Any {
 	mut entries := map[string]json2.Any{}
 	entries['table'] = json2.Any(table)
 	entries['cells'] = json2.Any(flatten_cells(cells))
@@ -303,15 +330,19 @@ pub fn (db Client) upsert(table string, cells []Cell, update_cells []Cell, idemp
 		'upsert': inner
 	})
 	ops := [op]
-	results := commit_txn(db, ops, idempotency_key) or { return err }
-	if results.len == 0 {
+	res := commit_txn(db, ops, idempotency_key) or { return err }
+	if res.epoch > 0 {
+		db.last_epoch = res.epoch
+	}
+	if res.results.len == 0 {
 		return json2.Any(json2.null)
 	}
-	return results[0]
+	return res.results[0]
 }
 
-// delete removes a row by its internal row id.
-pub fn (db Client) delete(table string, row_id i64) ! {
+// delete removes a row by its internal row id. Updates `db.last_epoch` with
+// the commit epoch.
+pub fn (mut db Client) delete(table string, row_id i64) ! {
 	mut inner_entries := map[string]json2.Any{}
 	inner_entries['table'] = json2.Any(table)
 	inner_entries['row_id'] = json2.Any(row_id)
@@ -320,11 +351,15 @@ pub fn (db Client) delete(table string, row_id i64) ! {
 		'delete': inner
 	})
 	ops := [op]
-	_ = commit_txn(db, ops, '') or { return err }
+	res := commit_txn(db, ops, '') or { return err }
+	if res.epoch > 0 {
+		db.last_epoch = res.epoch
+	}
 }
 
-// delete_by_pk removes a row by its primary-key value.
-pub fn (db Client) delete_by_pk(table string, pk json2.Any) ! {
+// delete_by_pk removes a row by its primary-key value. Updates `db.last_epoch`
+// with the commit epoch.
+pub fn (mut db Client) delete_by_pk(table string, pk json2.Any) ! {
 	mut inner_entries := map[string]json2.Any{}
 	inner_entries['table'] = json2.Any(table)
 	inner_entries['pk'] = pk
@@ -333,13 +368,16 @@ pub fn (db Client) delete_by_pk(table string, pk json2.Any) ! {
 		'delete_by_pk': inner
 	})
 	ops := [op]
-	_ = commit_txn(db, ops, '') or { return err }
+	res := commit_txn(db, ops, '') or { return err }
+	if res.epoch > 0 {
+		db.last_epoch = res.epoch
+	}
 }
 
 // ── Query ─────────────────────────────────────────────────────────────────
 
 // query starts a fluent `QueryBuilder` against `table`.
-pub fn (db Client) query(table string) QueryBuilder {
+pub fn (mut db Client) query(table string) QueryBuilder {
 	return QueryBuilder{
 		client: &db
 		table:  table
@@ -405,7 +443,7 @@ pub fn (mut qb QueryBuilder) execute() ![]json2.Any {
 // ── Transactions ──────────────────────────────────────────────────────────
 
 // begin starts a new batch transaction.
-pub fn (db Client) begin() Transaction {
+pub fn (mut db Client) begin() Transaction {
 	return Transaction{
 		client: &db
 	}
@@ -466,7 +504,8 @@ pub fn (t Transaction) txn_count() int {
 }
 
 // commit sends a batch of staged operations atomically to `/kit/txn` and
-// returns the per-operation results array.
+// returns the per-operation results array. The originating client's
+// `last_epoch` is updated with the commit epoch.
 pub fn (mut t Transaction) commit(idempotency_key string) !([]json2.Any, Transaction) {
 	if t.committed {
 		return merr(.already_committed, '')
@@ -475,9 +514,12 @@ pub fn (mut t Transaction) commit(idempotency_key string) !([]json2.Any, Transac
 		t.committed = true
 		return []json2.Any{}, t
 	}
-	results := commit_txn(t.client, t.ops, idempotency_key) or { return err }
+	res := commit_txn(*t.client, t.ops, idempotency_key) or { return err }
+	if res.epoch > 0 {
+		t.client.last_epoch = res.epoch
+	}
 	t.committed = true
-	return results, t
+	return res.results, t
 }
 
 // rollback discards all locally staged operations.
@@ -539,9 +581,18 @@ pub fn (db Client) schema_for(table string) !json2.Any {
 
 // ── Internal HTTP plumbing ────────────────────────────────────────────────
 
-// commit_txn is the convenience helper used by single-op methods. It sends
-// the JSON ops array and returns the decoded results.
-fn commit_txn(db Client, ops []json2.Any, idempotency_key string) ![]json2.Any {
+// TxnResult carries the decoded results and the commit epoch returned by a
+// /kit/txn call.
+pub struct TxnResult {
+pub:
+	results []json2.Any
+	epoch   u64
+}
+
+// commit_txn is the convenience helper used by single-op methods and batch
+// transactions. It sends the JSON ops array and returns both the decoded
+// results and the commit epoch reported by the server.
+fn commit_txn(db Client, ops []json2.Any, idempotency_key string) !TxnResult {
 	mut entries := map[string]json2.Any{}
 	entries['ops'] = json2.Any(ops)
 	if idempotency_key != '' {
@@ -551,8 +602,18 @@ fn commit_txn(db Client, ops []json2.Any, idempotency_key string) ![]json2.Any {
 	body := post_json(db, '/kit/txn', payload) or { return err }
 	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
 	obj := value.as_map()
-	results_any := obj['results'] or { return []json2.Any{} }
-	return results_any.as_array()
+
+	mut epoch := u64(0)
+	if status_any := obj['status'] {
+		if status_any.str() == 'committed' {
+			if epoch_any := obj['epoch'] {
+				epoch = epoch_any.u64()
+			}
+		}
+	}
+
+	results_any := obj['results'] or { return TxnResult{results: []json2.Any{}, epoch: epoch} }
+	return TxnResult{results: results_any.as_array(), epoch: epoch}
 }
 
 // post_json performs a POST with a JSON body (Content-Type: application/json)

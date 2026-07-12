@@ -2,10 +2,10 @@
 //
 // These exercise the client against a running mongreldb-server daemon on
 // http://127.0.0.1:8453 (override with the MONGRELDB_URL env var). The suite
-// is a 14-operation conformance matrix mirroring the other MongrelDB clients:
-// health, create table + count, put round trip, upsert, pk query, range query,
-// transaction commit, delete by pk, sql, schema, schema_for, table names, and
-// the two error-path cases.
+// mirrors the other MongrelDB clients: health, create table + count, put round
+// trip, upsert, pk query, range query, transaction commit, delete by pk, sql,
+// schema, schema_for, table names, error-path cases, history retention, and
+// AS OF EPOCH time travel.
 //
 // When no daemon is reachable the whole suite short-circuits cleanly (each
 // test checks connectivity first) rather than cascading failures.
@@ -78,14 +78,14 @@ fn fresh_table(db mongreldb.Client, name string, cols []mongreldb.Column) !i64 {
 }
 
 // must_put panics on failure; used to seed rows for read tests.
-fn must_put(db mongreldb.Client, table string, cells []mongreldb.Cell) {
+fn must_put(mut db mongreldb.Client, table string, cells []mongreldb.Cell) {
 	db.put(table, cells, '') or { panic(err) }
 }
 
 // ── Tests (14-operation conformance matrix) ───────────────────────────────
 
 fn test_health() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	ok := db.health() or {
 		assert false
 		return
@@ -94,7 +94,7 @@ fn test_health() ! {
 }
 
 fn test_create_table_and_count() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_tbl')
 	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 	n1 := db.count(name)!
@@ -103,7 +103,7 @@ fn test_create_table_and_count() ! {
 }
 
 fn test_put_and_count_round_trip() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_put')
 	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 	db.put(name, [
@@ -120,7 +120,7 @@ fn test_put_and_count_round_trip() ! {
 }
 
 fn test_upsert_inserts_then_updates() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_upsert')
 	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 
@@ -152,11 +152,11 @@ fn test_upsert_inserts_then_updates() ! {
 }
 
 fn test_query_by_pk() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_pk')
 	fresh_table(db, name, [int_col(1, 'id', true)])!
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(42)}])
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(43)}])
+	must_put(mut db, name, [mongreldb.Cell{1, mongreldb.int_value(42)}])
+	must_put(mut db, name, [mongreldb.Cell{1, mongreldb.int_value(43)}])
 
 	mut q := db.query(name)
 	q = q.where_('pk', {
@@ -167,14 +167,14 @@ fn test_query_by_pk() ! {
 }
 
 fn test_query_range() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_range')
 	fresh_table(db, name, [int_col(1, 'id', true), int_col(2, 'amount', false)])!
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(1)},
+	must_put(mut db, name, [mongreldb.Cell{1, mongreldb.int_value(1)},
 		mongreldb.Cell{2, mongreldb.int_value(50)}])
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(2)},
+	must_put(mut db, name, [mongreldb.Cell{1, mongreldb.int_value(2)},
 		mongreldb.Cell{2, mongreldb.int_value(120)}])
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(3)},
+	must_put(mut db, name, [mongreldb.Cell{1, mongreldb.int_value(3)},
 		mongreldb.Cell{2, mongreldb.int_value(200)}])
 
 	mut q := db.query(name)
@@ -189,7 +189,7 @@ fn test_query_range() ! {
 }
 
 fn test_transaction_put_commit() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_txn')
 	fresh_table(db, name, [int_col(1, 'id', true)])!
 
@@ -208,10 +208,10 @@ fn test_transaction_put_commit() ! {
 }
 
 fn test_delete_by_pk() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_del')
 	fresh_table(db, name, [int_col(1, 'id', true)])!
-	must_put(db, name, [mongreldb.Cell{1, mongreldb.int_value(5)}])
+	must_put(mut db, name, [mongreldb.Cell{1, mongreldb.int_value(5)}])
 	n6 := db.count(name)!
 
 	assert n6 == 1
@@ -223,7 +223,7 @@ fn test_delete_by_pk() ! {
 }
 
 fn test_sql() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_sql')
 	fresh_table(db, name, [int_col(1, 'id', true), int_col(2, 'amount', false)])!
 	n8 := db.count(name)!
@@ -245,7 +245,7 @@ fn test_sql() ! {
 }
 
 fn test_schema() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_schema')
 	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 
@@ -254,7 +254,7 @@ fn test_schema() ! {
 }
 
 fn test_schema_for() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_schema_for')
 	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
 
@@ -270,7 +270,7 @@ fn test_schema_for() ! {
 }
 
 fn test_table_names_lists_created_table() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_tables')
 	fresh_table(db, name, [int_col(1, 'id', true)])!
 
@@ -279,7 +279,7 @@ fn test_table_names_lists_created_table() ! {
 }
 
 fn test_error_on_nonexistent_table() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_missing')
 	_ = db.schema_for(name) or {
 		// Expected: any error.
@@ -291,7 +291,7 @@ fn test_error_on_nonexistent_table() ! {
 }
 
 fn test_error_type_carries_status() ! {
-	db := connect_or_skip() or { return }
+	mut db := connect_or_skip() or { return }
 	name := unique_table('v_missing2')
 	// schema_for maps a 404 to not_found, the typed result of the status.
 	_ = db.schema_for(name) or {
@@ -303,4 +303,53 @@ fn test_error_type_carries_status() ! {
 	}
 	// If we got here, the call unexpectedly succeeded.
 	assert false
+}
+
+fn test_history_retention_round_trip() ! {
+	mut db := connect_or_skip() or { return }
+	original := db.history_retention()!
+	assert original.history_retention_epochs > 0
+
+	defer {
+		db.set_history_retention_epochs(original.history_retention_epochs) or {}
+	}
+
+	db.set_history_retention_epochs(u64(1000))!
+	current := db.history_retention()!
+	assert current.history_retention_epochs == u64(1000)
+}
+
+fn test_as_of_epoch_time_travel() ! {
+	mut db := connect_or_skip() or { return }
+	original := db.history_retention()!
+	defer {
+		db.set_history_retention_epochs(original.history_retention_epochs) or {}
+	}
+	db.set_history_retention_epochs(u64(10000))!
+
+	name := unique_table('v_pit')
+	fresh_table(db, name, [int_col(1, 'id', true), float_col(2, 'amount')])!
+
+	db.put(name, [
+		mongreldb.Cell{1, mongreldb.int_value(1)},
+		mongreldb.Cell{2, mongreldb.float_value(1.0)},
+	], '')!
+	insert_epoch := db.last_epoch
+	assert insert_epoch > 0
+
+	db.upsert(name, [
+		mongreldb.Cell{1, mongreldb.int_value(1)},
+		mongreldb.Cell{2, mongreldb.float_value(9.0)},
+	], [mongreldb.Cell{2, mongreldb.float_value(9.0)}], '')!
+
+	hist_rows := db.exec_sql('SELECT id, amount FROM ${name} AS OF EPOCH ${insert_epoch}')!
+	assert hist_rows.len == 1
+	hist := hist_rows[0].as_map()
+	assert hist['id']!.i64() == 1
+	assert hist['amount']!.f64() == 1.0
+
+	curr_rows := db.exec_sql('SELECT id, amount FROM ${name}')!
+	assert curr_rows.len == 1
+	curr := curr_rows[0].as_map()
+	assert curr['amount']!.f64() == 9.0
 }
