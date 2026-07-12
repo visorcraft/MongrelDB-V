@@ -10,6 +10,7 @@
 module mongreldb_wire_test
 
 import mongreldb
+import net.http
 import x.json2
 
 fn test_column_to_json_emits_enum_and_default() {
@@ -156,4 +157,184 @@ fn test_url_path_escape_encodes_reserved() {
 	// Reserved characters are percent-encoded so they cannot inject segments.
 	assert mongreldb.url_path_escape('a/b') == 'a%2Fb'
 	assert mongreldb.url_path_escape('a b') == 'a%20b'
+}
+
+// ── Transport-level retention tests ───────────────────────────────────────
+//
+// The payload-shape test above only checks the JSON builder. These tests
+// drive the client's real `history_retention` and `set_history_retention_epochs`
+// methods through the HTTP transport (`Client.raw_request` -> `http.fetch`)
+// against an in-process `net.http.Server` mock, so we can assert the actual
+// on-wire method, the `/history/retention` path, the PUT body key, the GET
+// response keys, and the propagation of a non-2xx response to a typed
+// MongrelError. Uses only the standard library - no new dependency.
+
+// shared mock_state carries the last recorded request and the canned response
+// between the handler (running on the server thread) and the test thread.
+shared mock_state := MockState{}
+
+struct MockState {
+mut:
+	method    string
+	url       string
+	body      string
+	status    int = 200
+	resp_body string = '{}'
+}
+
+// MockHandler is an `net.http.Handler` that records each incoming request
+// into `shared mock_state` and returns the canned status+body. V satisfies
+// interfaces structurally, so defining `handle` with a matching signature is
+// enough; no explicit `impl` clause is needed.
+struct MockHandler {}
+
+fn (mut h MockHandler) handle(req http.Request) http.Response {
+	// Record the request method/path/body for the test to assert against.
+	lock mock_state {
+		mock_state.method = req.method.str()
+		mock_state.url = req.url
+		mock_state.body = req.data
+	}
+	// Snapshot the canned response under the read lock.
+	status, resp_body := rlock mock_state {
+		mock_state.status
+		mock_state.resp_body
+	}
+	return http.Response{
+		status_code: status
+		body: resp_body
+	}
+}
+
+// reset_mock installs a fresh canned 200 response and clears the recorded
+// request fields, so each test starts from a known state.
+fn reset_mock(status int, resp_body string) {
+	lock mock_state {
+		mock_state.method = ''
+		mock_state.url = ''
+		mock_state.body = ''
+		mock_state.status = status
+		mock_state.resp_body = resp_body
+	}
+}
+
+// last_method/last_url/last_body read the recorded request fields. They use
+// the shared-variable read lock so the server thread cannot tear the read.
+fn last_method() string {
+	return rlock mock_state {
+		mock_state.method
+	}
+}
+
+fn last_url() string {
+	return rlock mock_state {
+		mock_state.url
+	}
+}
+
+fn last_body() string {
+	return rlock mock_state {
+		mock_state.body
+	}
+}
+
+// start_mock_server binds a `net.http.Server` to a kernel-assigned port on
+// 127.0.0.1 and starts `listen_and_serve` in a background thread. The server
+// is heap-allocated and returned by reference so it outlives this helper's
+// stack frame; the caller must `close()` it when done.
+fn start_mock_server() !(&http.Server, string) {
+	mut server := &http.Server{
+		addr: ':0'
+		handler: MockHandler{}
+		show_startup_message: false
+	}
+	// Spawn listen_and_serve on a background thread. The server is
+	// heap-allocated so the pointer the caller receives and the pointer the
+	// server thread operates on reference the same Server instance.
+	spawn server.listen_and_serve()
+	// `wait_till_running` blocks until the listener is bound and returns the
+	// assigned port number.
+	port := server.wait_till_running() or { return error('mock server did not start') }
+	return server, 'http://127.0.0.1:${port}'
+}
+
+fn test_history_retention_transport_get_method_and_path() {
+	reset_mock(200, '{"history_retention_epochs":250,"earliest_retained_epoch":5}')
+	server, url := start_mock_server() or {
+		assert false
+		return
+	}
+	defer {
+		server.close()
+	}
+	mut db := mongreldb.connect(url, mongreldb.Options{})
+	hr := db.history_retention() or {
+		assert false
+		return
+	}
+	assert hr.history_retention_epochs == u64(250)
+	assert hr.earliest_retained_epoch == u64(5)
+	assert last_method() == 'GET'
+	assert last_url().contains('/history/retention')
+}
+
+fn test_history_retention_transport_put_method_path_and_body_key() {
+	reset_mock(200, '{"history_retention_epochs":2048,"earliest_retained_epoch":7}')
+	server, url := start_mock_server() or {
+		assert false
+		return
+	}
+	defer {
+		server.close()
+	}
+	mut db := mongreldb.connect(url, mongreldb.Options{})
+	hr := db.set_history_retention_epochs(u64(2048)) or {
+		assert false
+		return
+	}
+	assert hr.history_retention_epochs == u64(2048)
+	assert hr.earliest_retained_epoch == u64(7)
+	assert last_method() == 'PUT'
+	assert last_url().contains('/history/retention')
+	// The PUT body must carry the single key the server reads.
+	assert last_body().contains('"history_retention_epochs":2048')
+}
+
+fn test_history_retention_transport_non_2xx_propagates_as_typed_error() {
+	// 500 maps to MongrelErrorKind.http_error in map_status.
+	reset_mock(500, '{"error":{"message":"boom"}}')
+	server, url := start_mock_server() or {
+		assert false
+		return
+	}
+	defer {
+		server.close()
+	}
+	mut db := mongreldb.connect(url, mongreldb.Options{})
+	hr := db.history_retention() or {
+		// Verify the error category so we know it was mapped, not just any panic.
+		assert err.kind == .http_error
+		return
+	}
+	// If we somehow got a value back, the mock did not emit 500 as intended.
+	assert hr.history_retention_epochs == u64(0)
+	assert false
+}
+
+fn test_history_retention_transport_404_propagates_as_not_found() {
+	// 404 maps to MongrelErrorKind.not_found.
+	reset_mock(404, '{"error":{"message":"no such setting"}}')
+	server, url := start_mock_server() or {
+		assert false
+		return
+	}
+	defer {
+		server.close()
+	}
+	mut db := mongreldb.connect(url, mongreldb.Options{})
+	_ = db.set_history_retention_epochs(u64(1)) or {
+		assert err.kind == .not_found
+		return
+	}
+	assert false
 }

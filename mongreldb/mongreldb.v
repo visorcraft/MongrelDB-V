@@ -199,6 +199,18 @@ pub fn (db Client) history_retention() !HistoryRetention {
 	return HistoryRetention{hep.u64(), eep.u64()}
 }
 
+// history_retention_epochs returns the current history retention window size.
+pub fn (db Client) history_retention_epochs() !u64 {
+	hr := db.history_retention()!
+	return hr.history_retention_epochs
+}
+
+// earliest_retained_epoch returns the oldest readable epoch.
+pub fn (db Client) earliest_retained_epoch() !u64 {
+	hr := db.history_retention()!
+	return hr.earliest_retained_epoch
+}
+
 // set_history_retention_payload builds the JSON body for the
 // /history/retention setter. Exposed so wire-shape tests can assert the
 // on-wire format without a daemon.
