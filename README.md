@@ -225,6 +225,7 @@ they may update `db.last_epoch` from the server's commit epoch.
 | `where_(type, params) QueryBuilder` | Add a native condition (AND-ed) |
 | `projection(column_ids) QueryBuilder` | Set column projection |
 | `limit_(n) QueryBuilder` | Set row limit |
+| `offset(n) QueryBuilder` | Skip matching rows before the limit |
 | `execute() ![]json2.Any` | Run the query; returns the rows |
 
 ### `Transaction`

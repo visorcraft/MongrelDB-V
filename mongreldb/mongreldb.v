@@ -146,6 +146,7 @@ pub mut:
 	projection []i64
 	has_proj   bool
 	limit_val  ?i64
+	offset_val ?i64
 }
 
 // Transaction buffers a sequence of operations and flushes them atomically in
@@ -421,6 +422,12 @@ pub fn (mut qb QueryBuilder) limit_(row_limit i64) QueryBuilder {
 	return qb
 }
 
+// offset skips matching rows before applying the limit.
+pub fn (mut qb QueryBuilder) offset(row_offset i64) QueryBuilder {
+	qb.offset_val = row_offset
+	return qb
+}
+
 // execute builds the request, POSTs it to `/kit/query`, decodes the result
 // set, and returns the rows.
 pub fn (mut qb QueryBuilder) execute() ![]json2.Any {
@@ -444,6 +451,9 @@ pub fn (mut qb QueryBuilder) execute() ![]json2.Any {
 	}
 	if limit := qb.limit_val {
 		entries['limit'] = json2.Any(limit)
+	}
+	if offset := qb.offset_val {
+		entries['offset'] = json2.Any(offset)
 	}
 	payload := json2.Any(entries)
 	body := post_json(qb.client, '/kit/query', payload) or { return err }
