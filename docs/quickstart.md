@@ -30,7 +30,7 @@ Fetch a prebuilt server binary from the
 ```sh
 mkdir -p bin
 curl -fsSL -o bin/mongreldb-server \
-  https://github.com/visorcraft/MongrelDB/releases/download/v0.57.0/mongreldb-server-linux-x64
+  https://github.com/visorcraft/MongrelDB/releases/download/v0.58.1/mongreldb-server-linux-x64
 chmod +x bin/mongreldb-server
 ```
 
