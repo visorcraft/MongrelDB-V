@@ -24,6 +24,9 @@ import x.json2
 import strings
 import encoding.base64
 
+// version is the client library version (aligned with the MongrelDB train).
+pub const version = '0.59.1'
+
 // default_base_url is the daemon address used when none is supplied.
 pub const default_base_url = 'http://127.0.0.1:8453'
 
