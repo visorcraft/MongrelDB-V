@@ -19,6 +19,9 @@
 
 module mongreldb
 
+// version is the client library version (aligned with the MongrelDB train).
+pub const version = '0.59.1'
+
 import net.http
 import x.json2
 import strings
