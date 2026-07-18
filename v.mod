@@ -1,7 +1,7 @@
 Module {
 	name: 'mongreldb'
 	description: 'Pure V HTTP client for MongrelDB'
-	version: '0.60.2'
+	version: '0.60.3'
 	license: 'MIT OR Apache-2.0'
 	dependencies: []
 }
