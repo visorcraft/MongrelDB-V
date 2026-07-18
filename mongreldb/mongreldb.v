@@ -732,10 +732,15 @@ fn map_status(code int) !MongrelError {
 // ── Cell / column helpers ─────────────────────────────────────────────────
 
 // flatten_cells converts a list of cells to the server's flat
-// `[col_id, value, col_id, value, ...]` JSON array.
+// `[col_id, value, ...]` JSON array in ascending column-id order.
+// Stable ordering is required for idempotency keys: the server hashes the
+// request payload, and unordered pair order would make two commits of the
+// same cells look like a reuse mismatch.
 pub fn flatten_cells(cells []Cell) []json2.Any {
+	mut sorted := cells.clone()
+	sorted.sort(a.id < b.id)
 	mut flat := []json2.Any{}
-	for c in cells {
+	for c in sorted {
 		flat << json2.Any(c.id)
 		flat << c.value
 	}
