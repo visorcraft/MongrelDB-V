@@ -261,7 +261,7 @@ Fetch a prebuilt server binary from the [MongrelDB releases](https://github.com/
 ```sh
 mkdir -p bin
 curl -fsSL -o bin/mongreldb-server \
-  https://github.com/visorcraft/MongrelDB/releases/download/v0.61.1/mongreldb-server-linux-x64
+  https://github.com/visorcraft/MongrelDB/releases/download/v0.62.0/mongreldb-server-linux-x64
 chmod +x bin/mongreldb-server
 ```
 
