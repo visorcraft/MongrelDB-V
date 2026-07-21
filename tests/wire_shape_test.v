@@ -55,12 +55,8 @@ fn test_create_table_payload_preserves_ann_backend_options() {
 		assert false
 		return
 	}
-	payload := mongreldb.create_table_payload_with_indexes(
-		'vectors',
-		[]mongreldb.Column{},
-		map[string]json2.Any{},
-		decoded.as_array(),
-	).json_str()
+	payload := mongreldb.create_table_payload_with_indexes('vectors', []mongreldb.Column{},
+		map[string]json2.Any{}, decoded.as_array()).json_str()
 	assert payload.contains('"algorithm":"diskann"')
 	assert payload.contains('"quantization":"dense"')
 	assert payload.contains('"beam_width":8')
