@@ -28,7 +28,9 @@ jobs:
         run: v version
 
       - name: Format check
-        run: v fmt -verify mongreldb tests examples
+        run: |
+          v fmt -diff tests/wire_shape_test.v
+          v fmt -verify mongreldb tests examples
 
       - name: Build
         run: v -shared -W mongreldb
