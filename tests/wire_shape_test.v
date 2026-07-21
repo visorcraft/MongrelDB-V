@@ -50,7 +50,9 @@ fn test_create_table_payload_emits_checks() {
 }
 
 fn test_create_table_payload_preserves_ann_backend_options() {
-	decoded := json2.decode[json2.Any]('[{"name":"ann","column_id":2,"kind":"ann","options":{"ann":{"algorithm":"diskann","quantization":"dense","diskann":{"r":64,"l":128,"beam_width":8,"alpha":120}}}}]') or {
+	decoded := json2.decode[json2.Any](
+		'[{"name":"ann","column_id":2,"kind":"ann","options":{"ann":{"algorithm":"diskann","quantization":"dense","diskann":{"r":64,"l":128,"beam_width":8,"alpha":120}}}}]'
+	) or {
 		assert false
 		return
 	}
