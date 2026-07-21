@@ -121,6 +121,8 @@ pub mut:
 	has_default_scalar bool
 	default_scalar     json2.Any
 	default_expr       string @[serde: skip_if_empty]
+	has_embedding_source bool
+	embedding_source     json2.Any
 }
 
 // Cell pairs a column id with its value. The client flattens a list of cells
@@ -265,6 +267,12 @@ pub fn (db Client) create_table_with_constraints(name string, columns []Column, 
 	return db.send_create_table(payload)
 }
 
+// create_table_with_schema creates all six index kinds and portable model sources.
+pub fn (db Client) create_table_with_schema(name string, columns []Column, constraints map[string]json2.Any, indexes []json2.Any) !i64 {
+	payload := create_table_payload_with_indexes(name, columns, constraints, indexes)
+	return db.send_create_table(payload)
+}
+
 fn (db Client) send_create_table(payload json2.Any) !i64 {
 	body := post_json(db, '/kit/create_table', payload) or { return err }
 	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
@@ -276,6 +284,10 @@ fn (db Client) send_create_table(payload json2.Any) !i64 {
 // create_table_payload builds the exact JSON value sent to /kit/create_table.
 // An empty constraints map is omitted for backward-compatible wire output.
 pub fn create_table_payload(name string, columns []Column, constraints map[string]json2.Any) json2.Any {
+	return create_table_payload_with_indexes(name, columns, constraints, []json2.Any{})
+}
+
+pub fn create_table_payload_with_indexes(name string, columns []Column, constraints map[string]json2.Any, indexes []json2.Any) json2.Any {
 	mut col_arr := []json2.Any{}
 	for c in columns {
 		col_arr << column_to_any(c)
@@ -285,6 +297,9 @@ pub fn create_table_payload(name string, columns []Column, constraints map[strin
 	entries['columns'] = json2.Any(col_arr)
 	if constraints.len > 0 {
 		entries['constraints'] = json2.Any(constraints)
+	}
+	if indexes.len > 0 {
+		entries['indexes'] = json2.Any(indexes)
 	}
 	return json2.Any(entries)
 }
@@ -769,6 +784,9 @@ pub fn column_to_any(c Column) json2.Any {
 		entries['default_value'] = c.default_scalar
 	} else if c.default_value != '' {
 		entries['default_value'] = json2.Any(c.default_value)
+	}
+	if c.has_embedding_source {
+		entries['embedding_source'] = c.embedding_source
 	}
 	return json2.Any(entries)
 }
