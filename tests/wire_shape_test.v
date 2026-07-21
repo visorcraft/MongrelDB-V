@@ -49,6 +49,17 @@ fn test_create_table_payload_emits_checks() {
 	assert payload.contains('"IsNotNull":1')
 }
 
+fn test_create_table_payload_preserves_ann_backend_options() {
+	decoded := json2.decode[json2.Any]('[{"name":"ann","column_id":2,"kind":"ann","options":{"ann":{"algorithm":"diskann","quantization":"dense","diskann":{"r":64,"l":128,"beam_width":8,"alpha":120}}}}]') or {
+		assert false
+		return
+	}
+	payload := mongreldb.create_table_payload_with_indexes('vectors', []mongreldb.Column{}, map[string]json2.Any{}, decoded.as_array()).json_str()
+	assert payload.contains('"algorithm":"diskann"')
+	assert payload.contains('"quantization":"dense"')
+	assert payload.contains('"beam_width":8')
+}
+
 fn test_column_to_json_omits_absent_enum_and_default() {
 	col := mongreldb.Column{
 		id:          2
