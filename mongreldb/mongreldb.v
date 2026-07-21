@@ -118,9 +118,9 @@ pub mut:
 	enum_variants []string @[serde: skip_if_empty]
 	default_value string   @[serde: skip_if_empty]
 	// Set has_default_scalar to send a non-string JSON scalar as default_value.
-	has_default_scalar bool
-	default_scalar     json2.Any
-	default_expr       string @[serde: skip_if_empty]
+	has_default_scalar   bool
+	default_scalar       json2.Any
+	default_expr         string @[serde: skip_if_empty]
 	has_embedding_source bool
 	embedding_source     json2.Any
 }
