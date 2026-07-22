@@ -25,7 +25,7 @@ import strings
 import encoding.base64
 
 // version is the client library version (aligned with the MongrelDB train).
-pub const version = '0.63.1'
+pub const version = '0.64.0'
 
 // default_base_url is the daemon address used when none is supplied.
 pub const default_base_url = 'http://127.0.0.1:8453'
@@ -580,6 +580,160 @@ pub fn (mut t Transaction) rollback() !Transaction {
 // name. For statements that yield no rows (DDL/DML), an empty list is
 // returned.
 //
+// ── Durable recovery + retrieve_text (0.64+) ──────────────────────────────
+
+// parse_commit_hlc returns structural HLC fields, or none when absent.
+pub fn parse_commit_hlc(raw json2.Any) ?map[string]json2.Any {
+	obj := raw.as_map()
+	phys := obj['physical_micros'] or { return none }
+	mut out := map[string]json2.Any{}
+	out['physical_micros'] = phys
+	out['logical'] = obj['logical'] or { json2.Any(i64(0)) }
+	out['node_tiebreaker'] = obj['node_tiebreaker'] or { json2.Any(i64(0)) }
+	return out
+}
+
+// parse_query_status decodes GET /queries/{id} into a structural map.
+pub fn parse_query_status(raw json2.Any) map[string]json2.Any {
+	obj := raw.as_map()
+	mut status := map[string]json2.Any{}
+	status['query_id'] = obj['query_id'] or { json2.Any('') }
+	status['status'] = obj['status'] or { json2.Any('') }
+	status['state'] = obj['state'] or { json2.Any('') }
+	status['server_state'] = obj['server_state'] or { obj['state'] or { json2.Any('') } }
+	status['committed'] = obj['committed'] or { json2.null }
+	status['last_commit_epoch'] = obj['last_commit_epoch'] or { json2.null }
+	if hlc_any := obj['last_commit_hlc'] {
+		if hlc := parse_commit_hlc(hlc_any) {
+			status['last_commit_hlc'] = json2.Any(hlc)
+		}
+	}
+	outcome_raw := obj['outcome'] or { json2.Any(map[string]json2.Any{}) }
+	status['outcome'] = parse_durable_outcome(outcome_raw)
+	if durable_raw := obj['durable'] {
+		status['durable'] = parse_durable_outcome(durable_raw)
+	}
+	status['raw'] = raw
+	return status
+}
+
+fn parse_durable_outcome(raw json2.Any) json2.Any {
+	obj := raw.as_map()
+	mut out := map[string]json2.Any{}
+	out['committed'] = obj['committed'] or { json2.null }
+	out['last_commit_epoch'] = obj['last_commit_epoch'] or { json2.null }
+	out['serialization'] = obj['serialization'] or { json2.Any('') }
+	out['serialization_state'] = obj['serialization_state'] or { json2.null }
+	out['terminal_state'] = obj['terminal_state'] or { json2.null }
+	if hlc_any := obj['last_commit_hlc'] {
+		if hlc := parse_commit_hlc(hlc_any) {
+			out['last_commit_hlc'] = json2.Any(hlc)
+		}
+	}
+	return json2.Any(out)
+}
+
+// commit_hlc prefers durable → outcome → top-level last_commit_hlc.
+pub fn commit_hlc(status map[string]json2.Any) ?map[string]json2.Any {
+	if durable_any := status['durable'] {
+		d := durable_any.as_map()
+		if h := d['last_commit_hlc'] {
+			return h.as_map()
+		}
+	}
+	if outcome_any := status['outcome'] {
+		o := outcome_any.as_map()
+		if h := o['last_commit_hlc'] {
+			return h.as_map()
+		}
+	}
+	if h := status['last_commit_hlc'] {
+		return h.as_map()
+	}
+	return none
+}
+
+// serialization_state prefers nested durable/outcome fields.
+pub fn serialization_state(status map[string]json2.Any) string {
+	if durable_any := status['durable'] {
+		d := durable_any.as_map()
+		if s := d['serialization_state'] {
+			ss := s.str()
+			if ss != '' && ss != 'null' {
+				return ss
+			}
+		}
+		if s := d['serialization'] {
+			ss := s.str()
+			if ss != '' && ss != 'null' {
+				return ss
+			}
+		}
+	}
+	if outcome_any := status['outcome'] {
+		o := outcome_any.as_map()
+		if s := o['serialization_state'] {
+			ss := s.str()
+			if ss != '' && ss != 'null' {
+				return ss
+			}
+		}
+		if s := o['serialization'] {
+			return s.str()
+		}
+	}
+	return ''
+}
+
+// retrieve_text embeds text and runs ANN retrieve (POST /kit/retrieve_text).
+pub fn (db Client) retrieve_text(table string, embedding_column int, text string, k int) !json2.Any {
+	if table == '' {
+		return merr(.query, 'table is required')
+	}
+	if text == '' {
+		return merr(.query, 'text is required')
+	}
+	mut entries := map[string]json2.Any{}
+	entries['table'] = json2.Any(table)
+	entries['embedding_column'] = json2.Any(i64(embedding_column))
+	entries['text'] = json2.Any(text)
+	if k > 0 {
+		entries['k'] = json2.Any(i64(k))
+	}
+	body := post_json(db, '/kit/retrieve_text', json2.Any(entries)) or { return err }
+	if body.trim_space() == '' {
+		mut empty := map[string]json2.Any{}
+		empty['hits'] = json2.Any([]json2.Any{})
+		empty['provenance'] = json2.Any(map[string]json2.Any{})
+		return json2.Any(empty)
+	}
+	return json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
+}
+
+// query_status fetches retained SQL status for durable recovery.
+pub fn (db Client) query_status(query_id string) !map[string]json2.Any {
+	if query_id == '' {
+		return merr(.query, 'query_id is required')
+	}
+	path := '/queries/' + url_path_escape(query_id)
+	body := db.raw_request(.get, path, none) or { return err }
+	value := json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
+	return parse_query_status(value)
+}
+
+// cancel_query requests cancellation of a running SQL query.
+pub fn (db Client) cancel_query(query_id string) !json2.Any {
+	if query_id == '' {
+		return merr(.query, 'query_id is required')
+	}
+	path := '/queries/' + url_path_escape(query_id) + '/cancel'
+	body := post_json(db, path, json2.Any(map[string]json2.Any{})) or { return err }
+	if body.trim_space() == '' {
+		return json2.Any(map[string]json2.Any{})
+	}
+	return json2.decode[json2.Any](body) or { return merr(.json_error, 'malformed JSON body') }
+}
+
 // (Named `exec_sql` rather than `sql` because `sql` became a reserved keyword
 // in newer V releases and can no longer be used as a method name.)
 pub fn (db Client) exec_sql(sql_text string) ![]json2.Any {
