@@ -261,6 +261,21 @@ fn last_body(shared state MockState) string {
 // the `shared MockState` so the same instance is reachable from both the
 // handler (server thread) and the test (test thread).
 fn start_mock_server(shared state MockState) !(&http.Server, string) {
+	mut server := bind_mock_server(shared state)!
+	// V 0.5.2 stdlib regression: the first `net.http.Server` spawned in a
+	// fresh process reports an empty `addr` after `wait_till_running`
+	// returns, even though its listener is bound. Discard that server and
+	// bind again; the replacement reports its real kernel-assigned address.
+	if server.addr == '' {
+		server.close()
+		server = bind_mock_server(shared state)!
+	}
+	return server, 'http://${server.addr}'
+}
+
+// bind_mock_server spawns a bound, running mock server; see
+// `start_mock_server` for the ownership contract.
+fn bind_mock_server(shared state MockState) !&http.Server {
 	mut server := &http.Server{
 		addr:                 ':0'
 		handler:              MockHandler{
@@ -276,7 +291,7 @@ fn start_mock_server(shared state MockState) !(&http.Server, string) {
 	// returns, `server.addr` holds the kernel-assigned address. Note: the
 	// function returns the retry count, not the port.
 	server.wait_till_running() or { return error('mock server did not start') }
-	return server, 'http://${server.addr}'
+	return server
 }
 
 fn test_history_retention_transport_get_method_and_path() {
