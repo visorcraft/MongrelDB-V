@@ -115,12 +115,12 @@ pub mut:
 	ty            string
 	primary_key   bool
 	nullable      bool
-	enum_variants []string @[serde: skip_if_empty]
-	default_value string   @[serde: skip_if_empty]
+	enum_variants []string @[omitempty]
+	default_value string   @[omitempty]
 	// Set has_default_scalar to send a non-string JSON scalar as default_value.
 	has_default_scalar   bool
 	default_scalar       json2.Any
-	default_expr         string @[serde: skip_if_empty]
+	default_expr         string @[omitempty]
 	has_embedding_source bool
 	embedding_source     json2.Any
 }
